@@ -1,0 +1,10 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`is bit-exact deterministic under a scripted input log 1`] = `
+{
+  "head_x": 7,
+  "head_y": 13,
+  "outcome": "in_progress",
+  "tick": 18,
+}
+`;

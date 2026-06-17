@@ -1,0 +1,11 @@
+{
+  "id": "endless",
+  "description": "A clean 5×5 well, 12 deep. Score by survival — no win, only the top-out.",
+  "W": 5,
+  "D": 5,
+  "H": 12,
+  "gravity_period": 48,
+  "soft_factor": 10,
+  "move_period": 5,
+  "win_layers": 0
+}

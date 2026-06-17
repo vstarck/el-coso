@@ -1,0 +1,104 @@
+/* Blockoide lens — the ASCII well + sibling HUD.
+ *
+ * Class names are prefixed `blk-` so they namespace cleanly when loaded
+ * globally. Imported as a side-effect from index.ts; Vite injects it in
+ * dev and extracts to a CSS chunk in build.
+ */
+
+.blk-root {
+    display: flex;
+    gap: 1.25rem;
+    align-items: flex-start;
+    padding: 1rem 1.25rem;
+    font-family: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+    user-select: none;
+}
+
+.blk-well {
+    margin: 0;
+    padding: 0.6rem 0.7rem;
+    /* Small but legible: each game cell is a block of characters, so the
+       font stays small and the grid reads as fine ASCII art. line-height 1
+       + no letter-spacing tiles the cells cleanly. */
+    font-family: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+    font-size: 12px;
+    line-height: 1;
+    letter-spacing: 0;
+    white-space: pre;
+    background: #07090d;
+    border: 1px solid #1b2230;
+    color: #2b3140;
+}
+
+.blk-pit {
+    display: block;
+    background: #04060a;
+    border: 1px solid #1b2230;
+}
+
+/* The ASCII 3D shaft: a stack of depth slices, each a <pre> scaled by its
+   depth so the stack reads as a perspective tunnel. */
+.blk-shaft {
+    position: relative;
+    background: #04060a;
+}
+
+.blk-slice {
+    position: absolute;
+    margin: 0;
+    padding: 0;
+    font-family: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+    line-height: 1;
+    letter-spacing: 0;
+    white-space: pre;
+    background: transparent;
+    border: 1px solid rgba(96, 130, 210, 0.3);
+    /* left / top / transform / z-index / border-color are set per slice. */
+}
+
+.blk-hud {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    min-width: 12rem;
+    color: #cbd5e1;
+    font-size: 0.9rem;
+}
+
+.blk-title {
+    color: var(--accent, #5eead4);
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    font-size: 1rem;
+    margin-bottom: 0.25rem;
+}
+
+.blk-hash {
+    color: var(--accent, #5eead4);
+    font-size: 0.8rem;
+}
+
+.blk-dim {
+    color: #64748b;
+    font-size: 0.75rem;
+    margin-top: 0.4rem;
+}
+
+.blk-next {
+    margin: 0;
+    padding: 0.35rem 0.5rem;
+    font-size: 1.4rem;
+    line-height: 1;
+    letter-spacing: 0.06em;
+    background: #07090d;
+    border: 1px solid #1b2230;
+    min-height: 1.4rem;
+}
+
+.blk-legend {
+    margin-top: 0.6rem;
+    color: #64748b;
+    font-size: 0.72rem;
+    line-height: 1.5;
+    max-width: 14rem;
+}

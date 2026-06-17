@@ -1,0 +1,10 @@
+{
+  "id": "pentris-sprint",
+  "description": "Sprint — faster gravity, clear 5 lines to win.",
+  "W": 12,
+  "H": 22,
+  "gravity_period": 26,
+  "soft_factor": 10,
+  "move_period": 5,
+  "win_lines": 5
+}

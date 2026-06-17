@@ -1,0 +1,11 @@
+{
+  "id": "random-density",
+  "description": "Random initial population at 30% density on a torus. Exercises the RNG-seeded init path.",
+  "rng_seed": 42,
+  "W": 50,
+  "H": 40,
+  "boundary_x": "wrap",
+  "boundary_y": "wrap",
+  "seed_kind": "random_density",
+  "density": 0.30
+}

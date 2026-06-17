@@ -1,0 +1,15 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`classic-dvd — 200-tick state hash is stable 1`] = `
+{
+  "hash": "6993b4f2",
+  "puzzle_id": "classic-dvd",
+}
+`;
+
+exports[`gravity-well — 200-tick state hash is stable 1`] = `
+{
+  "hash": "b27700b4",
+  "puzzle_id": "gravity-well",
+}
+`;

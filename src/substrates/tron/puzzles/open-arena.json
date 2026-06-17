@@ -1,0 +1,20 @@
+{
+  "id": "open-arena",
+  "description": "Open 44x30 arena with one AI cycle — survive 240 ticks.",
+  "W": 44,
+  "H": 30,
+  "start_x": 22,
+  "start_y": 15,
+  "start_heading": "right",
+  "survive_ticks": 240,
+  "foes": [
+    {
+      "start_x": 33,
+      "start_y": 22,
+      "start_heading": "left",
+      "aggression": 0.35,
+      "turn_pref": "right",
+      "jitter": 0.1
+    }
+  ]
+}

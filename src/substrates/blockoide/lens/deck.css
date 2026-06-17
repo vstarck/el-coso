@@ -1,0 +1,248 @@
+/* Deck furniture — the chrome-less HUD around the center view.
+ *
+ * Everything is scoped under `.blk-deck` so it can't leak into an embedding
+ * host page. 640px fixed width, height grows with content. The center view's
+ * own internals keep their `.blk-*` classes from style.css.
+ */
+
+.blk-deck {
+    --deck-accent: var(--accent, #5eead4);
+    box-sizing: border-box;
+    width: 640px;
+    max-width: 100%;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 1rem 1.1rem 1.25rem;
+    background: #05070b;
+    border: 1px solid #161d29;
+    color: #cbd5e1;
+    font-family: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+    user-select: none;
+}
+.blk-deck *,
+.blk-deck *::before,
+.blk-deck *::after {
+    box-sizing: border-box;
+}
+
+/* Title bar — the inline SVG logo, recolored to the accent via stroke. */
+.blk-deck-titlebar {
+    padding: 0.2rem 0.1rem;
+    line-height: 0;
+}
+.blk-deck-titlebar svg {
+    display: block;
+    width: 100%;
+    max-width: 460px;
+    height: auto;
+}
+.blk-deck-titlebar svg path {
+    stroke: var(--deck-accent);
+}
+
+/* Main row: altimeter | stage | stats */
+.blk-deck-main {
+    display: flex;
+    align-items: stretch;
+    gap: 0.9rem;
+    min-height: 320px;
+}
+
+/* Region 1 — altimeter */
+.blk-deck-altimeter {
+    flex: 0 0 34px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+.blk-deck-alti-tube {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    background: #07090d;
+    border: 1px solid #1b2230;
+    overflow: hidden;
+}
+.blk-deck-alti-seg {
+    flex: 1 1 0;
+    min-height: 2px;
+    border-bottom: 1px solid rgba(20, 27, 38, 0.7);
+    background: rgba(94, 234, 212, calc(0.08 + 0.62 * var(--fill, 0)));
+}
+.blk-deck-alti-seg:last-child {
+    border-bottom: none;
+}
+.blk-deck-alti-seg.is-piece {
+    background: #f7fbff;
+    box-shadow: inset 0 0 0 1px var(--deck-accent);
+}
+.blk-deck-alti-label {
+    text-align: center;
+    font-size: 0.62rem;
+    color: #64748b;
+    letter-spacing: 0.04em;
+}
+
+/* Center stage — the active view mounts here */
+.blk-deck-stage {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    background: #04060a;
+}
+/* The pit canvas / shaft box / well <pre> should never overflow the stage. */
+.blk-deck-stage canvas,
+.blk-deck-stage .blk-shaft,
+.blk-deck-stage .blk-well {
+    max-width: 100%;
+}
+
+/* Stats column */
+.blk-deck-stats {
+    flex: 0 0 148px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    font-size: 0.88rem;
+}
+.blk-deck-stats-heading {
+    color: var(--deck-accent);
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    font-size: 0.92rem;
+    margin-bottom: 0.2rem;
+}
+.blk-deck-hash {
+    color: var(--deck-accent);
+    font-size: 0.78rem;
+}
+.blk-deck-dim {
+    color: #64748b;
+    font-size: 0.72rem;
+    margin-top: 0.35rem;
+    letter-spacing: 0.05em;
+}
+.blk-deck-next {
+    margin: 0;
+    padding: 0.35rem 0.5rem;
+    font-size: 1.3rem;
+    line-height: 1;
+    letter-spacing: 0.06em;
+    background: #07090d;
+    border: 1px solid #1b2230;
+    min-height: 1.3rem;
+    white-space: pre;
+}
+
+/* Region 2 — controls + transport */
+.blk-deck-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+    border-top: 1px solid #161d29;
+    padding-top: 0.75rem;
+}
+.blk-deck-transport {
+    display: flex;
+    gap: 0.45rem;
+    flex-wrap: wrap;
+}
+.blk-deck-btn {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 0.78rem;
+    color: #cbd5e1;
+    background: #0b0f16;
+    border: 1px solid #243044;
+    padding: 0.32rem 0.6rem;
+    cursor: pointer;
+    transition:
+        border-color 0.12s,
+        background 0.12s;
+}
+.blk-deck-btn:hover {
+    border-color: var(--deck-accent);
+    background: #10161f;
+}
+.blk-deck-btn.is-on {
+    color: #0b0f16;
+    background: var(--deck-accent);
+    border-color: var(--deck-accent);
+}
+.blk-deck-keyhints {
+    font-family: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+    font-size: 0.74rem;
+    line-height: 1.5;
+    color: #8b9bb4;
+    letter-spacing: 0.02em;
+}
+
+/* Overlay — win/lose + credits, drawn over the whole deck. The deck is the
+   positioning context (it has a border so it's already a containing block;
+   make it explicit). */
+.blk-deck {
+    position: relative;
+}
+.blk-deck-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+    background: rgba(4, 6, 10, 0.82);
+    z-index: 10;
+}
+.blk-deck-overlay[hidden] {
+    display: none;
+}
+.blk-deck-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+    align-items: flex-start;
+    max-width: 24rem;
+    padding: 1.2rem 1.3rem;
+    background: #07090d;
+    border: 1px solid #243044;
+    color: #cbd5e1;
+}
+.blk-deck-card-title {
+    font-family: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+    font-weight: 700;
+    font-size: 1.15rem;
+    letter-spacing: 0.06em;
+    line-height: 1.2;
+    color: var(--deck-accent);
+}
+.blk-deck-card-title.is-won {
+    color: #6ee7a8;
+}
+.blk-deck-card-title.is-lost {
+    color: #f08a8a;
+}
+.blk-deck-card-body {
+    font-size: 0.86rem;
+    line-height: 1.5;
+    color: #9aa7bd;
+}
+.blk-deck-credits {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    font-size: 0.84rem;
+    line-height: 1.5;
+    color: #9aa7bd;
+}
+.blk-deck-credits a {
+    color: var(--deck-accent);
+    text-decoration: none;
+    border-bottom: 1px solid rgba(94, 234, 212, 0.4);
+}
+.blk-deck-credits a:hover {
+    border-bottom-color: var(--deck-accent);
+}

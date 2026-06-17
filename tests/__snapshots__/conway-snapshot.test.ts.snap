@@ -1,0 +1,36 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`blinker — 500-tick state hash is stable 1`] = `
+{
+  "hash": "7a45ac77",
+  "puzzle_id": "blinker",
+}
+`;
+
+exports[`glider — 500-tick state hash is stable 1`] = `
+{
+  "hash": "daf38c85",
+  "puzzle_id": "glider",
+}
+`;
+
+exports[`r-pentomino — 500-tick state hash is stable 1`] = `
+{
+  "hash": "d42a08d8",
+  "puzzle_id": "r-pentomino",
+}
+`;
+
+exports[`r-pentomino-large — 500-tick state hash is stable 1`] = `
+{
+  "hash": "9d980b7e",
+  "puzzle_id": "r-pentomino-large",
+}
+`;
+
+exports[`random-density — 500-tick state hash is stable 1`] = `
+{
+  "hash": "7070adb6",
+  "puzzle_id": "random-density",
+}
+`;

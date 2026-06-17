@@ -1,0 +1,6 @@
+{
+  "id": "example-0",
+  "description": "Authoring template — 16×12 grid, counter increments each tick.",
+  "W": 16,
+  "H": 12
+}

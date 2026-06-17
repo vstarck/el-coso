@@ -1,0 +1,11 @@
+{
+  "id": "glider",
+  "description": "Classic 5-cell glider. Walks diagonally; cycles on a torus.",
+  "rng_seed": 1,
+  "W": 40,
+  "H": 30,
+  "boundary_x": "wrap",
+  "boundary_y": "wrap",
+  "seed_kind": "pattern",
+  "pattern": [1, 0, 2, 1, 0, 2, 1, 2, 2, 2]
+}

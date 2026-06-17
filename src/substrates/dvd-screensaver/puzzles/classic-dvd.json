@@ -1,0 +1,17 @@
+{
+  "id": "classic-dvd",
+  "description": "The screensaver — constant-speed bounce, no gravity, a little jitter. Velocity is the lively overlay; the naive projection is correct until a wall or a jitter nudge.",
+  "world_w": 320,
+  "world_h": 200,
+  "radius": 10,
+  "restitution": 1,
+  "gravity": 0,
+  "jitter": 0.03,
+  "dt": 1,
+  "projection_horizon": 60,
+  "rng_seed": 7,
+  "init_x": 112,
+  "init_y": 90,
+  "init_vx": 2.1,
+  "init_vy": 1.3
+}

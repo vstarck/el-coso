@@ -1,0 +1,11 @@
+{
+  "id": "r-pentomino",
+  "description": "The R-pentomino — famous for chaotic 1103-tick stabilization on an open grid.",
+  "rng_seed": 1,
+  "W": 60,
+  "H": 60,
+  "boundary_x": "wall",
+  "boundary_y": "wall",
+  "seed_kind": "pattern",
+  "pattern": [30, 29, 31, 29, 29, 30, 30, 30, 30, 31]
+}

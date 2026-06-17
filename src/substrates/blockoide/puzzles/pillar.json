@@ -1,0 +1,12 @@
+{
+  "id": "pillar",
+  "description": "A 5×5 well with a full-height pillar dead center. The obstacle satisfies its layers but eats the column — re-derive your packing.",
+  "W": 5,
+  "D": 5,
+  "H": 10,
+  "gravity_period": 48,
+  "soft_factor": 10,
+  "move_period": 5,
+  "win_layers": 6,
+  "columns": [[2, 2]]
+}

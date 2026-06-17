@@ -1,0 +1,11 @@
+{
+  "id": "r-pentomino-large",
+  "description": "R-pentomino seeded near the centre of a 400×300 toroidal world. At 12px/cell the world is 4800×3600 — bigger than any common display, so pan-drag is required to roam.",
+  "rng_seed": 1,
+  "W": 400,
+  "H": 300,
+  "boundary_x": "wrap",
+  "boundary_y": "wrap",
+  "seed_kind": "pattern",
+  "pattern": [201, 150, 202, 150, 200, 151, 201, 151, 201, 152]
+}

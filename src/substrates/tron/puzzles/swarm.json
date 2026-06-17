@@ -1,0 +1,36 @@
+{
+  "id": "swarm",
+  "description": "50x32 arena, three AI cycles with different biases — survive 260 ticks.",
+  "W": 50,
+  "H": 32,
+  "start_x": 25,
+  "start_y": 16,
+  "start_heading": "right",
+  "survive_ticks": 260,
+  "foes": [
+    {
+      "start_x": 6,
+      "start_y": 6,
+      "start_heading": "down",
+      "aggression": 0.7,
+      "turn_pref": "right",
+      "jitter": 0.05
+    },
+    {
+      "start_x": 43,
+      "start_y": 6,
+      "start_heading": "down",
+      "aggression": 0.1,
+      "turn_pref": "left",
+      "jitter": 0.3
+    },
+    {
+      "start_x": 43,
+      "start_y": 25,
+      "start_heading": "up",
+      "aggression": 0.4,
+      "turn_pref": "right",
+      "jitter": 0.1
+    }
+  ]
+}

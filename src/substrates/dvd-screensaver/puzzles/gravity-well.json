@@ -1,0 +1,17 @@
+{
+  "id": "gravity-well",
+  "description": "Gravity on — parabolic arcs. The acceleration overlay points down and the projection comes alive; the NAIVE ray stays a straight-bounce line while the real path curves, because the lens can't see the force.",
+  "world_w": 320,
+  "world_h": 200,
+  "radius": 10,
+  "restitution": 0.92,
+  "gravity": 0.12,
+  "jitter": 0.02,
+  "dt": 1,
+  "projection_horizon": 80,
+  "rng_seed": 11,
+  "init_x": 60,
+  "init_y": 40,
+  "init_vx": 3.4,
+  "init_vy": 0
+}

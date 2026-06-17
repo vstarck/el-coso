@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>El Blockoide — embed</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: #000;
+      }
+      /* Some host-page noise to prove the embed doesn't leak styles. */
+      .host-note {
+        color: #556;
+        font-family: system-ui, sans-serif;
+        padding: 1.5rem 2rem 0;
+      }
+      .embed-slot {
+        padding: 2rem;
+        display: flex;
+        justify-content: center;
+      }
+    </style>
+  </head>
+  <body>
+    <p class="host-note">↓ react-less embed mounted below into a bare host page ↓</p>
+    <div class="embed-slot"><div id="blockoide"></div></div>
+    <script type="module">
+      import { mountBlockoide } from "/src/embed/blockoide.ts";
+      mountBlockoide("#blockoide");
+    </script>
+  </body>
+</html>

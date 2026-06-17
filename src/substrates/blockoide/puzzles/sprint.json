@@ -1,0 +1,11 @@
+{
+  "id": "sprint",
+  "description": "A clean 4×4 well, 10 deep. Clear 8 layers to win.",
+  "W": 4,
+  "D": 4,
+  "H": 10,
+  "gravity_period": 48,
+  "soft_factor": 10,
+  "move_period": 5,
+  "win_layers": 8
+}

@@ -1,0 +1,15 @@
+.idea
+node_modules
+dist
+dist-embed
+
+# Per-substrate embed entries the export pipeline generates on the fly.
+src/embed/.generated
+
+# Stray transpiled JS shadows in TS source trees (src/web is JS-native,
+# so it's exempt).
+src/app/**/*.js
+src/engine/**/*.js
+src/history/**/*.js
+src/substrates/**/*.js
+tests/**/*.js

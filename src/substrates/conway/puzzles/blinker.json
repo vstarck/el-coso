@@ -1,0 +1,11 @@
+{
+  "id": "blinker",
+  "description": "Three-cell row. Period-2 oscillator — the smallest non-still life.",
+  "rng_seed": 1,
+  "W": 20,
+  "H": 15,
+  "boundary_x": "wall",
+  "boundary_y": "wall",
+  "seed_kind": "pattern",
+  "pattern": [9, 7, 10, 7, 11, 7]
+}

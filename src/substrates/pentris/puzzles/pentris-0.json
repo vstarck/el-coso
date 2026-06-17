@@ -1,0 +1,10 @@
+{
+  "id": "pentris-0",
+  "description": "Marathon — 12×22 well, 0.8 s/row gravity, clear 20 lines to win.",
+  "W": 12,
+  "H": 22,
+  "gravity_period": 48,
+  "soft_factor": 10,
+  "move_period": 5,
+  "win_lines": 20
+}

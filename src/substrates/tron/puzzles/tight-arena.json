@@ -1,0 +1,10 @@
+{
+  "id": "tight-arena",
+  "description": "Cramped 26x18 arena — survive 220 ticks. Pack your trail tight.",
+  "W": 26,
+  "H": 18,
+  "start_x": 13,
+  "start_y": 9,
+  "start_heading": "right",
+  "survive_ticks": 220
+}
