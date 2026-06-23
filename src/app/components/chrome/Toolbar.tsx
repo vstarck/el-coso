@@ -1,9 +1,12 @@
 /* Spec §8 — top toolbar. Single 44px row, items-stretch, children that need
    natural 26px height wrapped in flex-items-center. */
 
+import { useState } from "react";
 import {
   Beaker,
+  Braces,
   Camera,
+  Check,
   CircleHelp,
   Eraser,
   ExternalLink,
@@ -22,6 +25,7 @@ import {
 import { hasFeature } from "@/lenses/types";
 import { hudIcon } from "@/app/hudIcons";
 import { goBackToCommit } from "@/app/lib/bttf";
+import { captureState } from "@/app/lib/captureState";
 import { isSceneChild } from "@/app/lib/scenes/scene-stack";
 import {
   chromePanelsFor,
@@ -48,6 +52,17 @@ export function Toolbar({ onClose }: { onClose?: () => void }) {
   const toggleHelp = useStore((s) => s.toggleHelp);
   const toggleSettings = useStore((s) => s.toggleSettings);
   const triggerSnapshot = useStore((s) => s.triggerSnapshot);
+
+  // State dump — copy the raw substrate State (the data every lens renders
+  // from) as JSON. Transient checkmark confirms the clipboard write.
+  const [stateCaptured, setStateCaptured] = useState(false);
+  const captureSubstrateState = async () => {
+    const result = await captureState(session.history.substrate.read);
+    if (result === "copied") {
+      setStateCaptured(true);
+      setTimeout(() => setStateCaptured(false), 1200);
+    }
+  };
   // Subscribed so the trigger button labels + puzzle list re-render after
   // bumpSession swaps session.active_substrate_id under us. sceneVersion is
   // the same kind of subscription for scene push/pop (which projects a
@@ -343,6 +358,15 @@ export function Toolbar({ onClose }: { onClose?: () => void }) {
 
       {/* Right side */}
       <div className="flex items-center gap-0.5">
+        <button
+          type="button"
+          className="btn btn-ghost btn-icon"
+          onClick={captureSubstrateState}
+          title="Copy substrate State as JSON — the data the lens renders from (falls back to download)"
+          aria-label="Copy substrate state as JSON"
+        >
+          {stateCaptured ? <Check size={13} /> : <Braces size={13} />}
+        </button>
         <button
           type="button"
           className="btn btn-ghost btn-icon"
