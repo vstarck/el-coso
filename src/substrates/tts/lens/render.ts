@@ -20,7 +20,7 @@ export function boardRows(s: SubstrateState): string[] {
     const row: string[] = [];
     for (let x = 0; x < W; x++) {
       const v = s.cells[y * W + x] ?? 0;
-      row.push(v === 0 ? EMPTY : PIECE_NAMES[v - 1] ?? "?");
+      row.push(v === 0 ? EMPTY : (PIECE_NAMES[v - 1] ?? "?"));
     }
     grid.push(row);
   }
@@ -55,6 +55,16 @@ export type TtsView = {
   board: string[];
 };
 
+const computeStatus = (s: SubstrateState, flags: LensFlags): string => {
+  return s.outcome === "lost"
+    ? "topped out"
+    : s.outcome === "won"
+      ? "cleared"
+      : flags.paused
+        ? "paused"
+        : "playing";
+};
+
 export function stateView(
   s: SubstrateState,
   flags: LensFlags = { auto: false, paused: false },
@@ -62,21 +72,13 @@ export function stateView(
   // The run state folds the pause flag in — a deliberate `pause` reads as
   // "paused", while a finished run keeps its terminal word (the loop stops
   // on game-over too, but that's "topped out", not "paused").
-  const status =
-    s.outcome === "lost"
-      ? "topped out"
-      : s.outcome === "won"
-        ? "cleared"
-        : flags.paused
-          ? "paused"
-          : "playing";
   return {
     tick: s.tick,
     auto: flags.auto,
-    status,
+    status: computeStatus(s, flags),
     lines: s.lines,
-    piece: s.piece_kind >= 0 ? PIECE_NAMES[s.piece_kind] ?? "?" : "-",
-    next: s.next_kind >= 0 ? PIECE_NAMES[s.next_kind] ?? "?" : "-",
+    piece: s.piece_kind >= 0 ? (PIECE_NAMES[s.piece_kind] ?? "?") : "-",
+    next: s.next_kind >= 0 ? (PIECE_NAMES[s.next_kind] ?? "?") : "-",
     board: boardRows(s),
   };
 }

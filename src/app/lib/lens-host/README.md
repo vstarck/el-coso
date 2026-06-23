@@ -10,9 +10,13 @@ design-questions pipeline), not by importing a loop helper.
 Extracted helpers:
 
 - **`subscribe-head.ts`** — `subscribeHead(render)` — fires `render`
-  whenever `playheadTick` or `historyVersion` shifts. Available to
-  turn-based lenses that want a commit-driven re-render alongside the
-  host's per-frame `renderFrom`. Consumers: turn-based lenses.
+  whenever `playheadTick` or `historyVersion` shifts. This is the
+  store-backed implementation of `LensHost.subscribeHead`: `storeLensHost`
+  delegates to it, so a lens reaches it as `host.subscribeHead(render)`
+  (the store-free `makeLensHost` has its own observable). Lenses do **not**
+  import this directly — turn-based lenses use `host.subscribeHead` for a
+  commit-driven re-render alongside the host's per-frame `renderFrom`.
+  Consumer: `storeLensHost`.
 - **`raf-loop.ts`** — `attachRafLoop({ render, tick?, isPlaying?,
   speedMult? })` — requestAnimationFrame driver. **Host-internal:**
   `SubstrateHost` calls it once per mount, wiring `render` to every

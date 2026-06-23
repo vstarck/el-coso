@@ -19,10 +19,16 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { createHistory, type HistoryAdapter } from "@/history";
-import { mountHost } from "@/lib/lens-host/mount-host";
+import { createHistory, historyReset, type HistoryAdapter } from "@/history";
+import { mountHost, type TouchAction } from "@/lib/lens-host/mount-host";
 import { makeLensHost } from "@/lib/lens-host/host";
-import type { Lens, RenderSize, TunableValue } from "@/lenses/types";
+import type {
+  EmbedCommandSpec,
+  Lens,
+  LensTunable,
+  RenderSize,
+  TunableValue,
+} from "@/lenses/types";
 
 // The normalized barrel shape. Mirrors what the app registry reads off each
 // `import * as Sub from "@/substrates/<id>"`, minus the cross-substrate
@@ -58,9 +64,50 @@ export type EmbedConfig = {
    *  "physics.gravity"). Config-target tunables merge into the level;
    *  lens-target tunables are applied via the mounted lens. */
   tunables?: Record<string, TunableValue>;
+  /** Start with looping on, if the substrate honours `config.loop` (a
+   *  presentational substrate that restarts itself at the end of its run).
+   *  Toggleable at runtime via the handle's `setLoop`. */
+  loop?: boolean;
+  /** Opaque precompiled state a substrate's lens may consume to skip a costly
+   *  mount-time derivation (e.g. moving-swarm's tagged-particle blob). Folded
+   *  into the level as `config.precomputed`; the lens validates + falls back. */
+  precomputed?: unknown;
+  /** `touch-action` for the embed frame — the page-scroll vs. capture policy on
+   *  touch devices. `none` = full any-direction capture (interactive embeds;
+   *  the page can't scroll over it); `pan-y` = vertical scroll passes through,
+   *  horizontal drags captured (good-citizen feed default). Omit ⇒ the page
+   *  scrolls normally (a drag over the canvas pans the page). */
+  touchAction?: TouchAction;
 };
 
-export type EmbedHandle = { destroy(): void };
+// The embedding page drives the embed through this handle — wire buttons to it.
+export type EmbedHandle = {
+  destroy(): void;
+  play(): void;
+  pause(): void;
+  toggle(): void;
+  isPlaying(): boolean;
+  /** Restart the run from its initial state (lens `reset` if it has one, else a
+   *  generic history reset). */
+  reset(): void;
+  /** Enable/disable self-looping (substrates that honour `config.loop`). */
+  setLoop(on: boolean): void;
+  /** Read a lens/config tunable by dotted path (spec/25). */
+  getTunable(path: string[]): TunableValue | undefined;
+  /** Write a lens/config tunable by dotted path (spec/25). */
+  setTunable(path: string[], value: TunableValue): void;
+  /** Dispatch a substrate-specific named command (spec/25). THROWS if the lens
+   *  declares no command surface or rejects the name — never a silent no-op, so
+   *  the caller / SDK can surface it. */
+  command(name: string, ...args: unknown[]): void;
+  /** Discovery manifest for the embed SDK: the mounted lens id + its declared
+   *  tunables and commands. */
+  describe(): {
+    lens: string;
+    tunables: LensTunable[];
+    commands: EmbedCommandSpec[];
+  };
+};
 
 function findPuzzleJson(substrate: SubstrateModule, id: string | undefined): unknown {
   const wanted = id ?? substrate.meta.defaultPuzzle;
@@ -113,6 +160,9 @@ export function mountSubstrate(
     }
   }
 
+  if (config.precomputed !== undefined) {
+    (level as Record<string, unknown>).precomputed = config.precomputed;
+  }
   const seed =
     config.seed ?? (level as { rng_seed?: number }).rng_seed ?? 1;
   const adapter =
@@ -131,16 +181,45 @@ export function mountSubstrate(
   const mounted = mountHost(el, lens, history, {
     host,
     renderSize: substrate.meta.renderSize,
+    ...(config.touchAction ? { touchAction: config.touchAction } : {}),
   });
 
-  // Apply post-mount config: lens-target tunables, speed, autoplay.
+  // Apply post-mount config: lens-target tunables, speed, autoplay, loop.
   for (const { path, value } of lensTunables) mounted.tree.root.setTunable(path, value);
   if (config.speed) mounted.tree.root.setSpeed(config.speed);
   if (config.autoplay === false) host.setPlaying(false);
+  const setLoop = (on: boolean): void => {
+    (history.config as { loop?: boolean }).loop = on;
+  };
+  if (config.loop !== undefined) setLoop(config.loop);
 
   return {
-    destroy(): void {
-      mounted.unmount();
+    destroy: () => mounted.unmount(),
+    play: () => host.setPlaying(true),
+    pause: () => host.setPlaying(false),
+    toggle: () => host.togglePlaying(),
+    isPlaying: () => host.isPlaying(),
+    reset: () => {
+      const lensReset = mounted.tree.root.reset;
+      if (lensReset) lensReset();
+      else historyReset(history);
     },
+    setLoop,
+    getTunable: (path) => mounted.tree.root.getTunable(path),
+    setTunable: (path, value) => mounted.tree.root.setTunable(path, value),
+    command: (name, ...args) => {
+      const dispatch = mounted.tree.root.command;
+      if (!dispatch) {
+        throw new Error(
+          `embed: lens "${lensId}" declares no command surface (command "${name}" rejected)`,
+        );
+      }
+      dispatch(name, args); // the lens throws on an unknown name; we let it propagate
+    },
+    describe: () => ({
+      lens: lensId,
+      tunables: lens.tunables,
+      commands: lens.commands ?? [],
+    }),
   };
 }

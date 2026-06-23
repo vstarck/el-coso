@@ -26,7 +26,11 @@
  * gates on viewport visibility instead of window focus, since an iframe is
  * almost never "focused" (`document.hasFocus()` is false until clicked, which
  * would otherwise freeze a self-playing embed on load). When `isActive` is
- * supplied the loop registers no focus listeners and just polls it.
+ * supplied the loop registers no focus listeners and just polls it — AND it
+ * gates `render` on it too (not just ticks): a host that knows it's off-screen
+ * shouldn't redraw, so a heavy render (e.g. a many-particle swarm) costs nothing
+ * while the embed is scrolled out of a feed. The built-in focus gate keeps
+ * rendering while unfocused (so resize stays responsive on the app chrome).
  *
  * `fpsCap()` gates how often we *render* (0 = uncapped); `reportFps` receives a
  * rolling readout sampled every ~500ms (and 0 on stop). Both default to inert,
@@ -118,14 +122,22 @@ export function attachRafLoopCore(opts: RafLoopCoreOpts): RafLoopHandle {
     const dt_ms = Math.min(now - last_frame_time, MAX_FRAME_DT_MS);
     last_frame_time = now;
 
-    if (tick !== undefined && isActive() && isPlaying()) {
+    const active = isActive();
+    if (tick !== undefined && active && isPlaying()) {
       tick_accumulator += speedMult() * TARGET_BASELINE_HZ * (dt_ms / 1000);
-      while (tick_accumulator >= 1 && isActive() && isPlaying() && !stopped) {
+      while (tick_accumulator >= 1 && active && isPlaying() && !stopped) {
         tick();
         tick_accumulator -= 1;
       }
     }
-    render();
+    // Render: the app default (built-in focus gate) keeps rendering while
+    // unfocused so resize/redraw stays responsive. A host with an INJECTED
+    // activity model (an embed gating on viewport visibility) skips render while
+    // inactive too — no point redrawing an off-screen embed, which is the real
+    // CPU win for a heavy render (a self-playing embed scrolled out of a feed).
+    if (active || owns_focus_gate) {
+      render();
+    }
 
     frames_since_sample += 1;
     const elapsed = now - last_sample_time;

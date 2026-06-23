@@ -1,0 +1,9 @@
+{
+  "id": "small",
+  "description": "Standard 5x10 well, endless. Lose by topping out.",
+  "W": 8,
+  "H": 10,
+  "gravity_period": 20,
+  "move_period": 3,
+  "win_lines": 0
+}

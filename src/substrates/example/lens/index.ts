@@ -16,7 +16,6 @@
  * Plus the cross-cutting interaction kit: attachPanDrag for navigation. */
 
 import { historyAdvance, historyTick } from "@/history";
-import { useStore } from "@/app/store";
 import type {
   ExampleCommitPayload,
   ExampleConfig,
@@ -72,7 +71,7 @@ type LensState = {
 function mountExample(
   args: LensMountArgs<SubstrateState, ExampleConfig, ExampleInputs, ExampleCommitPayload>,
 ): MountedLens<SubstrateState> {
-  const { container, history } = args;
+  const { container, history, host } = args;
   const config = history.config;
 
   const canvas = document.createElement("canvas");
@@ -144,8 +143,10 @@ function mountExample(
 
   // Q5: autonomous ⇒ expose `tick` + `speedMult` on the MountedLens;
   // the host owns the single rAF and drives them. (Don't call
-  // attachRafLoop from a lens.)
-  const isPlaying = () => useStore.getState().playing;
+  // attachRafLoop from a lens.) Reach the host only through `args.host`
+  // (the injected LensHost) — never import `@/app/store`, which would
+  // break the embed/bare/headless hosts. "Ask, don't read."
+  const isPlaying = () => host.isPlaying();
   let speed_mult = 1;
 
   function doOneTick(): void {
@@ -153,13 +154,13 @@ function mountExample(
     const cur_tick = history.substrate.read.tick;
     if (cur_tick < active.head_tick) {
       historyAdvance(history, {});
-      useStore.getState().setPlayheadTick(history.substrate.read.tick);
+      host.setPlayheadTick(history.substrate.read.tick);
       return;
     }
     historyTick(history, {});
-    useStore.getState().setPlayheadTick(history.substrate.read.tick);
+    host.setPlayheadTick(history.substrate.read.tick);
     if (history.substrate.read.tick % 50 === 0) {
-      useStore.getState().bumpHistoryVersion();
+      host.bumpHistoryVersion();
     }
   }
 
@@ -218,13 +219,13 @@ function mountExample(
     renderThumbnail,
     commitGlyph,
     pause: () => {
-      useStore.getState().setPlaying(false);
+      host.setPlaying(false);
     },
     resume: () => {
-      useStore.getState().setPlaying(true);
+      host.setPlaying(true);
     },
     step: () => {
-      useStore.getState().setPlaying(false);
+      host.setPlaying(false);
       doOneTick();
     },
     setSpeed: (id: string) => {

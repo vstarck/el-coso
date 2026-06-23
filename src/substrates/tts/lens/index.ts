@@ -27,6 +27,7 @@ import type { Params, SpeedOption } from "@/lib/types";
 import type {
   Cadence,
   CommitGlyph,
+  EmbedCommandSpec,
   HudMetric,
   Lens,
   LensMountArgs,
@@ -116,6 +117,21 @@ function buildHelpText(commands: Command[]): string {
   );
   return ["commands:", ...lines].join("\n");
 }
+
+// Discovery manifest for the embed SDK (spec/25) — the public command surface.
+// Names mirror the in-mount `COMMANDS` table (dispatch routes through it); this
+// static list is what a host enumerates to build controls. `command(name, args)`
+// in the returned MountedLens throws on an unknown name (never a silent no-op,
+// unlike the terminal's tolerant `?.run`).
+const COMMAND_SPECS: EmbedCommandSpec[] = [
+  { name: "restart", label: "start a new game" },
+  { name: "auto", label: "toggle self-play" },
+  { name: "pause", label: "stop the clock" },
+  { name: "play", label: "resume" },
+  { name: "rewind", label: "rewind N pieces", args: [{ name: "n", type: "number" }] },
+  { name: "theme", label: "set theme", args: [{ name: "name", type: "string" }] },
+  { name: "help", label: "toggle command list" },
+];
 
 function mountTts(
   args: LensMountArgs<SubstrateState, TtsConfig, TtsInputs, TtsCommitPayload>,
@@ -372,6 +388,14 @@ function mountTts(
     getTunable,
     setTunable,
     subscribeTunables,
+    // Embed SDK (spec/25): route a named command through the same table the
+    // terminal uses. Unknown name THROWS (the SDK surfaces it) — not the
+    // terminal's tolerant silent skip.
+    command: (name, cmdArgs) => {
+      const cmd = commandIndex.get(String(name).toLowerCase());
+      if (!cmd) throw new Error(`tts: unknown command "${name}"`);
+      cmd.run(cmdArgs.map((a) => String(a)));
+    },
   };
 }
 
@@ -384,6 +408,7 @@ export const ttsLens: Lens<
   id: "tts-json",
   name: "JSON",
   tunables: TUNABLES,
+  commands: COMMAND_SPECS,
   speeds: SPEEDS,
   cadence: CADENCE,
   target_kind: "dom",

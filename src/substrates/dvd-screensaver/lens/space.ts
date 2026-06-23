@@ -8,7 +8,6 @@
  * smeared across this file. */
 
 import { historyAdvance, historyTick } from "@/history";
-import { useStore } from "@/app/store";
 import { attachCanvasSizing } from "@/lib/canvas/sizing";
 import type { Params, SpeedOption } from "@/lib/types";
 import type {
@@ -92,7 +91,7 @@ const TRAIL_LEN = 64;
 export function mountSpace(
   args: LensMountArgs<SubstrateState, DvdConfig, DvdInputs, DvdCommitPayload>,
 ): MountedLens<SubstrateState> {
-  const { container, history } = args;
+  const { container, history, host } = args;
 
   const canvas = document.createElement("canvas");
   canvas.style.position = "absolute";
@@ -172,13 +171,13 @@ export function mountSpace(
     const cur_tick = history.substrate.read.tick;
     if (cur_tick < active.head_tick) {
       historyAdvance(history, {});
-      useStore.getState().setPlayheadTick(history.substrate.read.tick);
+      host.setPlayheadTick(history.substrate.read.tick);
       return;
     }
     historyTick(history, {});
-    useStore.getState().setPlayheadTick(history.substrate.read.tick);
+    host.setPlayheadTick(history.substrate.read.tick);
     if (history.substrate.read.tick % 50 === 0) {
-      useStore.getState().bumpHistoryVersion();
+      host.bumpHistoryVersion();
     }
   }
 
@@ -204,13 +203,13 @@ export function mountSpace(
     snapshot: () => canvas,
     commitGlyph,
     pause: () => {
-      useStore.getState().setPlaying(false);
+      host.setPlaying(false);
     },
     resume: () => {
-      useStore.getState().setPlaying(true);
+      host.setPlaying(true);
     },
     step: () => {
-      useStore.getState().setPlaying(false);
+      host.setPlaying(false);
       doOneTick();
     },
     setSpeed: (id: string) => {

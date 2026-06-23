@@ -62,6 +62,20 @@ export type LensTunable = Rule & {
 
 export type TunableValue = number | boolean | string;
 
+// A substrate-specific named command a lens exposes to the embed SDK (spec/25),
+// declared for host discovery. Dispatch is `MountedLens.command` (below). This is
+// the escape hatch for verbs that aren't tunables (a terminal `reset`, an
+// autopilot toggle, a transit-map toggle). Universal verbs (play/pause/reset)
+// stay on the host; tunables stay on the tunable channel.
+export type EmbedCommandSpec = {
+  // Stable id, e.g. "toggle_autopilot", "rewind".
+  name: string;
+  // Human label for a generated control. Defaults to `name` at the call site.
+  label?: string;
+  // Positional arg hints for a generated control; dispatch passes them through.
+  args?: ReadonlyArray<{ name: string; type: "number" | "string" | "bool" }>;
+};
+
 // What kind of element the lens renders into. Spec/15. Drives a handful of
 // chrome layout decisions (CSS perspective wrapper, future target-specific
 // affordances). New target kinds extend the union; chrome reads via
@@ -112,6 +126,10 @@ export type MountedLens<State extends TickedState> = {
   pause(): void;
   resume(): void;
   step(): void;
+  // Optional lens-tier "restart" — return the run to its initial state (e.g.
+  // historyReset + clear lens-local scratch). A host (chrome reset button, embed
+  // handle) calls it; absent ⇒ the host falls back to a generic history reset.
+  reset?(): void;
   setSpeed(preset_id: string): void;
   // Lens-tier tunable surface — message-passing, not shared memory. The
   // lens owns its tunables privately (closure / class field / whatever);
@@ -120,6 +138,11 @@ export type MountedLens<State extends TickedState> = {
   getTunable(path: string[]): TunableValue | undefined;
   setTunable(path: string[], value: TunableValue): void;
   subscribeTunables(listener: () => void): () => void;
+  // Dispatch a substrate-specific named command (spec/25), declared for discovery
+  // in `Lens.commands`. Absent ⇒ the lens accepts no named commands; the embed
+  // SDK / host MUST surface that as an error, never swallow it. The lens SHOULD
+  // throw on an unknown command name (it propagates to the host's error channel).
+  command?: (name: string, args: unknown[]) => void;
   // Substrate-specific affordance — drop all player-placed biases. Optional
   // because not every substrate has biases that survive between ticks.
   clearBiases?: () => void;
@@ -354,6 +377,10 @@ export type Lens<State extends TickedState, Config, Input, CommitPayload> = {
   // Chrome theme — accent color etc. Chrome reads via `getLensTheme()`
   // so the default falls through cleanly when omitted. See `LensTheme`.
   theme?: LensTheme;
+  // Substrate-specific named commands this lens accepts, for embed-SDK discovery
+  // (spec/25). Declaration only; dispatch is `MountedLens.command`. Omit ⇒ no
+  // named commands (the lens still gets the universal verbs + tunable channel).
+  commands?: EmbedCommandSpec[];
   // Composite children. When present, the host mounts each layer into
   // its own sibling DOM container (z-indexed by array order: first =
   // bottom, last = top), then hands the mounted handles to this lens via

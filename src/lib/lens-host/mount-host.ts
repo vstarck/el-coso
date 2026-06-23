@@ -34,10 +34,29 @@ const ROT_Z_DEG = 0;
 // (the app's layout.PAD).
 const PAD = 16;
 
+/** CSS `touch-action` values relevant to an interactive canvas embed. `none`
+ *  fully captures touch (any-direction brush/drag works, but the page can't
+ *  scroll over the embed); `pan-y` lets vertical page-scroll pass through while
+ *  capturing horizontal drags (the good-citizen feed default); `manipulation`
+ *  keeps scroll + pinch but kills the 300ms double-tap delay. Omit to leave the
+ *  browser default (`auto`). */
+export type TouchAction =
+  | "auto"
+  | "none"
+  | "pan-x"
+  | "pan-y"
+  | "pan-x pan-y"
+  | "manipulation";
+
 export type MountHostOptions<State extends TickedState> = {
   /** Inject a host (e.g. one wired to a transport UI). Defaults to a fresh
    *  store-free `makeLensHost`. */
   host?: ReturnType<typeof makeLensHost>;
+  /** `touch-action` for the host frame — a deployment policy, set by the embed
+   *  (the app chrome never scrolls, so it doesn't need this). Applied to a
+   *  canvas ancestor, so it constrains the gesture whatever the lens paints
+   *  into. Omit ⇒ browser default. See {@link TouchAction}. */
+  touchAction?: TouchAction;
   /** The substrate's fixed render envelope (`meta.renderSize`), if any. When
    *  present the whole lens tree renders inside one centered box of this size
    *  rather than full-bleed. */
@@ -140,6 +159,12 @@ export function mountHost<State extends TickedState, Config, Input, CommitPayloa
   const host = opts.host ?? makeLensHost();
   const renderSize = opts.renderSize;
   const { outer, root_frame, cleanup } = buildFrames(container, lens, renderSize);
+
+  // Touch-gesture policy: `outer` is an ancestor of every canvas the lens
+  // mounts (full-bleed: outer › center › root_frame; renderSize: outer is the
+  // envelope), so its `touch-action` constrains the gesture without the lens
+  // having to know it's embedded. Omit ⇒ browser default (page scrolls).
+  if (opts.touchAction) outer.style.touchAction = opts.touchAction;
 
   // Static viewport inset — no chrome panels to dodge, just uniform padding.
   // SAFE_AREA lenses get one immediate fire; nothing ever changes it.

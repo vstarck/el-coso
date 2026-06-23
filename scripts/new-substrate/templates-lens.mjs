@@ -100,8 +100,10 @@ export function lensIndexTs({ forms: F, answers: A }) {
         : "{}";
 
   // --- imports ---
+  // The lens reaches the host only through `args.host` (the injected
+  // LensHost) — never `@/app/store`, which would break the embed/bare/
+  // headless hosts. "Ask, don't read." (spec/13)
   const imp = [];
-  imp.push(`import { useStore } from "@/app/store";`);
   if (autonomous) imp.push(`import { historyAdvance, historyTick } from "@/history";`);
   else if (eventDriven && (discrete || stamp)) imp.push(`import { historyTick } from "@/history";`);
   const engineTypes = ["SubstrateState", `${P}CommitPayload`, `${P}Config`, `${P}Inputs`];
@@ -179,8 +181,8 @@ export function lensIndexTs({ forms: F, answers: A }) {
   } else if (stamp && isCanvas) {
     const drive = eventDriven
       ? `      historyTick(history, { stamp: { x: s.cell_x, y: s.cell_y } });\n` +
-        `      useStore.getState().setPlayheadTick(history.substrate.read.tick);\n` +
-        `      useStore.getState().bumpHistoryVersion();\n`
+        `      host.setPlayheadTick(history.substrate.read.tick);\n` +
+        `      host.bumpHistoryVersion();\n`
       : `      void s; // TODO (autonomous pace): stash the stamp for the next tick.\n`;
     input =
       `\n  // Q4 stamp: a held pointer streams cell edits (attachBrush).\n` +
@@ -197,8 +199,8 @@ export function lensIndexTs({ forms: F, answers: A }) {
   } else if (discrete) {
     const drive = eventDriven
       ? `    historyTick(history, { action: { kind: "act", x: 0, y: 0 } });\n` +
-        `    useStore.getState().setPlayheadTick(history.substrate.read.tick);\n` +
-        `    useStore.getState().bumpHistoryVersion();\n`
+        `    host.setPlayheadTick(history.substrate.read.tick);\n` +
+        `    host.bumpHistoryVersion();\n`
       : `    // TODO (autonomous pace): queue the action for the next tick.\n`;
     input =
       `\n  // Q4 discrete: one action per click.\n` +
@@ -220,13 +222,13 @@ export function lensIndexTs({ forms: F, answers: A }) {
       `    if (cur < active.head_tick) {\n` +
       `      const entry = active.inputs.find((e) => e.tick === cur + 1);\n` +
       `      historyAdvance(history, entry ? entry.input : ${neutral});\n` +
-      `      useStore.getState().setPlayheadTick(history.substrate.read.tick);\n` +
+      `      host.setPlayheadTick(history.substrate.read.tick);\n` +
       `      return;\n` +
       `    }\n` +
       `    historyTick(history, ${neutral});\n` +
       `    const st = history.substrate.read;\n` +
-      `    useStore.getState().setPlayheadTick(st.tick);\n` +
-      `    if (st.tick % COMMIT_PERIOD === 0) useStore.getState().bumpHistoryVersion();\n` +
+      `    host.setPlayheadTick(st.tick);\n` +
+      `    if (st.tick % COMMIT_PERIOD === 0) host.bumpHistoryVersion();\n` +
       `  }\n`;
   }
 
@@ -266,10 +268,10 @@ export function lensIndexTs({ forms: F, answers: A }) {
   }
   if (isCanvas) ret.push("    snapshot: () => canvas,");
   ret.push("    commitGlyph,");
-  ret.push("    pause: () => { useStore.getState().setPlaying(false); },");
-  ret.push("    resume: () => { useStore.getState().setPlaying(true); },");
+  ret.push("    pause: () => { host.setPlaying(false); },");
+  ret.push("    resume: () => { host.setPlaying(true); },");
   ret.push(
-    "    step: () => { useStore.getState().setPlaying(false);" + (autonomous ? " doOneTick();" : "") + " },",
+    "    step: () => { host.setPlaying(false);" + (autonomous ? " doOneTick();" : "") + " },",
   );
   ret.push("    setSpeed: (id: string) => { const o = SPEEDS.find((s) => s.id === id); if (o) speed_mult = o.mult; },");
   ret.push("    getTunable: () => undefined,");
@@ -301,7 +303,7 @@ const TUNABLES: LensTunable[] = [];
 function mount${P}(
   args: LensMountArgs<SubstrateState, ${P}Config, ${P}Inputs, ${P}CommitPayload>,
 ): MountedLens<SubstrateState> {
-  const { container, history } = args;${historyUsed ? "" : "\n  void history;"}
+  const { container, history, host } = args;${historyUsed ? "" : "\n  void history;"}
 
 ${container}${sizing}${safe}${input}${driver}
   function renderFrom(state: SubstrateState): void {

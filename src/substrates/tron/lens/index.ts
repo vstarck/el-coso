@@ -18,7 +18,6 @@
  * *recorded* input so a scrub-then-play stays bit-exact. */
 
 import { historyAdvance, historyTick } from "@/history";
-import { useStore } from "@/app/store";
 import type {
   SubstrateState,
   TronCommitPayload,
@@ -100,7 +99,7 @@ type LensState = {
 function mountTron(
   args: LensMountArgs<SubstrateState, TronConfig, TronInputs, TronCommitPayload>,
 ): MountedLens<SubstrateState> {
-  const { container, history } = args;
+  const { container, history, host } = args;
   const config = history.config;
 
   const canvas = document.createElement("canvas");
@@ -190,14 +189,14 @@ function mountTron(
     if (cur < active.head_tick) {
       const entry = active.inputs.find((e) => e.tick === cur + 1);
       historyAdvance(history, entry ? entry.input : { desired: "none" });
-      useStore.getState().setPlayheadTick(history.substrate.read.tick);
+      host.setPlayheadTick(history.substrate.read.tick);
       return;
     }
 
     // Live head. The run is over once terminal — halt autoplay so tick
     // stops growing and the head rests on the win/crash commit.
     if (history.substrate.read.outcome !== "in_progress") {
-      useStore.getState().setPlaying(false);
+      host.setPlaying(false);
       return;
     }
 
@@ -205,9 +204,9 @@ function mountTron(
     // and record it as this tick's input.
     historyTick(history, { desired: keys.next() });
     const st = history.substrate.read;
-    useStore.getState().setPlayheadTick(st.tick);
+    host.setPlayheadTick(st.tick);
     if (st.tick % COMMIT_PERIOD === 0 || st.outcome !== "in_progress") {
-      useStore.getState().bumpHistoryVersion();
+      host.bumpHistoryVersion();
     }
   }
 
@@ -291,13 +290,13 @@ function mountTron(
     commitGlyph,
     outcomeFor,
     pause: () => {
-      useStore.getState().setPlaying(false);
+      host.setPlaying(false);
     },
     resume: () => {
-      useStore.getState().setPlaying(true);
+      host.setPlaying(true);
     },
     step: () => {
-      useStore.getState().setPlaying(false);
+      host.setPlaying(false);
       doOneTick();
     },
     setSpeed: (id: string) => {

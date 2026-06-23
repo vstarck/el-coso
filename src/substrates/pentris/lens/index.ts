@@ -27,7 +27,6 @@
  *                            the shape), payload carries the state-hash.
  */
 
-import { useStore } from "@/app/store";
 import {
   historyAdvance,
   historyBranchFrom,
@@ -131,7 +130,7 @@ function setupCanvas(css_w: number, css_h: number): {
 function mountPentris(
   args: LensMountArgs<SubstrateState, PentrisConfig, PentrisInputs, PentrisCommitPayload>,
 ): MountedLens<SubstrateState> {
-  const { container, history } = args;
+  const { container, history, host } = args;
   const config = history.config;
   const board_w = config.W * CELL_PX;
   const board_h = config.H * CELL_PX;
@@ -297,11 +296,11 @@ function mountPentris(
     const before_spawn = history.substrate.read.spawn_count;
     historyTick(history, input);
     const st = history.substrate.read;
-    useStore.getState().setPlayheadTick(st.tick);
+    host.setPlayheadTick(st.tick);
     // Per-event commits: the tree changes exactly when a piece locks or
     // the run ends.
     if (st.spawn_count !== before_spawn || st.outcome !== "in_progress") {
-      useStore.getState().bumpHistoryVersion();
+      host.bumpHistoryVersion();
     }
   }
 
@@ -321,7 +320,7 @@ function mountPentris(
       if (!diverging) {
         const entry = active.inputs.find((e) => e.tick === cur + 1);
         historyAdvance(history, entry ? entry.input : NEUTRAL);
-        useStore.getState().setPlayheadTick(history.substrate.read.tick);
+        host.setPlayheadTick(history.substrate.read.tick);
         return;
       }
       let n = 1;
@@ -329,7 +328,7 @@ function mountPentris(
       const fork_id = `wb-${n}`;
       historyBranchFrom(history, history.active, cur, fork_id);
       historySetActiveBranch(history, fork_id);
-      useStore.getState().bumpHistoryVersion();
+      host.bumpHistoryVersion();
       cached_view = null;
       liveTick(live);
       return;
@@ -338,7 +337,7 @@ function mountPentris(
     // Live head. Terminal ⇒ halt autoplay; the head rests on the outcome
     // commit.
     if (history.substrate.read.outcome !== "in_progress") {
-      useStore.getState().setPlaying(false);
+      host.setPlaying(false);
       return;
     }
 
@@ -398,7 +397,7 @@ function mountPentris(
   }
 
   function drawTree(state: SubstrateState): void {
-    const version = useStore.getState().historyVersion;
+    const version = host.getHistoryVersion();
     if (!cached_view || version !== cached_version) {
       cached_view = windowLanes(buildView(history), RECENT_LANES);
       cached_version = version;
@@ -456,8 +455,8 @@ function mountPentris(
       historySetActiveBranch(history, best.branchId);
     }
     historyStateAt(history, best.branchId, best.tick);
-    useStore.getState().setPlayheadTick(best.tick);
-    useStore.getState().bumpHistoryVersion();
+    host.setPlayheadTick(best.tick);
+    host.bumpHistoryVersion();
     cached_view = null; // active branch may have changed; rebuild
   }
   tree_canvas.addEventListener("click", onTreeClick);
@@ -551,13 +550,13 @@ function mountPentris(
       ];
     },
     pause: () => {
-      useStore.getState().setPlaying(false);
+      host.setPlaying(false);
     },
     resume: () => {
-      useStore.getState().setPlaying(true);
+      host.setPlaying(true);
     },
     step: () => {
-      useStore.getState().setPlaying(false);
+      host.setPlaying(false);
       doOneTick();
     },
     setSpeed: (id: string) => {
