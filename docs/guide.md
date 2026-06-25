@@ -183,8 +183,67 @@ npm run export -- tts \
 | `--seed=<n>`    | the RNG seed |
 | `--speed=<id>`  | a speed preset |
 | `--set k=v`     | any lens or config tunable (repeatable) |
+| `--no-autoplay` | mount paused instead of self-running |
+| `--loop`        | restart at the end of the run (substrates that honour it) |
+| `--touch-action=<v>` | touch policy: `none` (full capture) / `pan-y` (let vertical scroll through) |
+| `--title=<text>` | the page `<title>` |
+| `--precomputed=<file>` | bake a JSON blob as the default `config.precomputed` |
+| `--js-only`     | emit only the `.js` bundle, skip the standalone `.html` |
 
-Export works for any substrate whose lens talks to its host through the
-injected host handle rather than reaching into the app — the same "ask,
-don't reach in" discipline the engine asks of ticks. `conway` and `tts`
-export to a few kilobytes with zero React or store in the bundle.
+Every run also (re)builds two substrate-agnostic files at the `dist-embed/`
+root: `embed.html` (the SDK guest runtime) and `sdk.js` (the host bundle,
+below). `--skip-guest` skips them; `--skip-typecheck` skips the `tsc` gate.
+
+Export works for any substrate — lenses reach their host through the injected
+`host` handle rather than the app store (the "ask, don't reach in" discipline,
+now repo-wide and scaffolded by the wizard), so the bundle carries no React or
+store. `conway` and `tts` come out at a few kilobytes.
+
+## Drive many embeds — the SDK
+
+A self-contained `<id>.html` is enough to drop one world into a page. To mount
+**several** and control them from the host page, use the **Embed SDK**: one
+`createConductor` returns a `Conductor`, and each `conductor.embed(target, spec)`
+returns a per-embed handle.
+
+```js
+import { createConductor } from "./sdk.js";   // or window.ElCoso.createConductor
+
+const conductor = createConductor({
+  runtime: "/embeds/embed.html",               // the guest page
+  base: "/embeds/",                             // bundle base: ${base}<id>/<id>-embed.js
+  autoplay: { default: true, persist: "coso-autoplay" },
+});
+
+const tts = conductor.embed("#slot", { substrate: "tts", config: { speed: "2x" } });
+tts.pause();
+tts.setTunable("theme", "boomer-blue");
+tts.command("rewind", 5);                       // substrate-specific named command
+conductor.pauseAll();                           // global autoplay policy
+```
+
+Each handle also has `play` / `toggle` / `reset` / `setLoop`, an `on(event, cb)`
+for `ready` / `state` / `error`, and `describe()` — the discovery manifest
+`{ lens, tunables, commands }` so a host can build controls for whatever the
+substrate exposes. **Named commands** (`command(name, ...args)`) are the third
+control tier alongside the universal verbs and the tunable channel: a lens
+declares its own verbs (an autopilot toggle, a `rewind`) and the SDK forwards
+them. Host and guest talk over the `coso/v1` postMessage protocol (origin +
+token gated). The full host API is in `src/embed/sdk/`; a worked host page is
+`examples/portfolio.html`.
+
+## Preview & debug
+
+`npm run dev` serves the exports so you can try them as deployed:
+
+- **`/portfolio`** — the SDK Conductor demo (`examples/portfolio.html`).
+- **`/embeds/*`** — the whole `dist-embed/` tree (`sdk.js`, `embed.html`,
+  `<id>/<id>-embed.js`), served verbatim — no HMR injection, so an embed runs
+  exactly as it will on a real page.
+- **`/embed/<id>`** — a single standalone embed.
+
+Jank in an embed (or the app)? Append **`?profile`** to the URL to turn on the
+host loop's frame-cost profiler: it warns in the console the moment a frame's
+`tick` or `render` phase blows the budget, naming the phase and substrate.
+`?profile=8` sets the budget in ms. Off by default, so it costs nothing in
+production.

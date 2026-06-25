@@ -85,7 +85,12 @@ npm run export -- <substrate-id>
 
 Builds a self-contained, single-file HTML at `dist-embed/<id>/<id>.html`.
 
-See [`docs/guide.md`](docs/guide.md#export-an-embed).
+To mount and drive **many** embeds from one host page — play/pause,
+tunables, named commands, a global autoplay policy — there's a small host
+SDK (`createConductor`).
+
+See [`docs/guide.md`](docs/guide.md#export-an-embed) and
+[_Drive many embeds — the SDK_](docs/guide.md#drive-many-embeds--the-sdk).
 
 ## AI Disclaimer / Inspirations
 
