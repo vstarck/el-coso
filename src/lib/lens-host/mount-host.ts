@@ -21,6 +21,7 @@ import {
 } from "@/lenses/types";
 import type { History, TickedState } from "@/history";
 import { attachRafLoopCore } from "./raf-loop-core";
+import { type FrameProfiler, frameProfilerFromEnv } from "./frame-profiler";
 import { makeLensHost } from "./host";
 import { mountLensTree, type LensTree } from "./mount-tree";
 
@@ -66,6 +67,15 @@ export type MountHostOptions<State extends TickedState> = {
   autoStartIfAutoplay?: boolean;
   /** Optional rolling-fps sink (uncapped render rate either way). */
   reportFps?: (fps: number) => void;
+  /** Label for the dev frame-profiler (the substrate/lens id), surfaced in
+   *  over-budget warnings. The profiler is auto-wired from the runtime gate
+   *  (`?profile` / `__COSO_PROFILE__`) and is off — zero loop overhead — unless
+   *  that gate is set, so every exported embed gets it for free without paying
+   *  for it in production. Pass `profiler` to override the auto-wiring. */
+  profileLabel?: string;
+  /** Pre-built profiler, bypassing the env gate (e.g. to feed a dev HUD). When
+   *  omitted the host builds one from the runtime gate using `profileLabel`. */
+  profiler?: FrameProfiler;
 };
 
 export type MountedHost<State extends TickedState> = {
@@ -207,6 +217,7 @@ export function mountHost<State extends TickedState, Config, Input, CommitPayloa
   const isActive = (): boolean =>
     in_view && (typeof document === "undefined" || !document.hidden);
 
+  const profiler = opts.profiler ?? frameProfilerFromEnv(opts.profileLabel);
   const loop = attachRafLoopCore({
     render: () => {
       const state = history.substrate.read;
@@ -217,6 +228,7 @@ export function mountHost<State extends TickedState, Config, Input, CommitPayloa
     isPlaying: () => host.isPlaying(),
     isActive,
     ...(opts.reportFps ? { reportFps: opts.reportFps } : {}),
+    ...(profiler ? { profile: profiler.profile } : {}),
   });
 
   // AUTOPLAY lenses run on mount (SubstrateHost parity). Turn-based lenses

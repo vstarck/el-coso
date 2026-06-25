@@ -10,7 +10,7 @@ drop into a web page or a feed post.
 npm run export -- <substrate-id> [options]
 ```
 
-Produces two files in `dist-embed/`:
+Produces two files in `dist-embed/<id>/`:
 
 - **`<id>.html`** — a self-contained page (JS + CSS inlined, config baked in).
   Double-click to play, host anywhere, screen-record, or `<iframe src>` into a
@@ -104,4 +104,15 @@ Both mount functions return `{ destroy() }`.
 
 `npm run dev`, then open `/src/embed/blockoide.html` (the blockoide bespoke
 embed, through Vite — co-located with its entry). For any exported substrate,
-open the generated `dist-embed/<id>.html` directly.
+open the generated `dist-embed/<id>/<id>.html` directly.
+
+## SDK Conductor demo
+
+`examples/portfolio.html` is a maintained host page that mounts embeds with the
+public **Embed SDK** (`src/embed/sdk/`, spec/25): one `createConductor`, per-embed
+controls, named commands, and a global autoplay policy. Export at least `tts` and
+`conway` (`npm run export -- tts && npm run export -- conway`), run `npm run dev`,
+then open **`/portfolio`**. The dev server serves the whole `dist-embed/` tree at
+`/embeds/*` (verbatim — no HMR injection), so the demo runs exactly as deployed.
+It shows the imperative pattern; the declarative `data-coso` + `conductor.enhance()`
+form is a one-step derivation.

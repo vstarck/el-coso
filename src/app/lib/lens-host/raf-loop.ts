@@ -13,6 +13,7 @@ import {
   attachRafLoopCore,
   type RafLoopHandle,
 } from "@/lib/lens-host/raf-loop-core";
+import { frameProfilerFromEnv } from "@/lib/lens-host/frame-profiler";
 
 export type { RafLoopHandle };
 
@@ -21,12 +22,19 @@ export type RafLoopOpts = {
   tick?: () => void;
   isPlaying?: () => boolean;
   speedMult?: () => number;
+  /** Substrate/lens id for the dev frame-profiler's over-budget warnings. The
+   *  profiler is off (zero overhead) unless the runtime gate (`?profile`) is
+   *  set. */
+  label?: string;
 };
 
 export function attachRafLoop(opts: RafLoopOpts): RafLoopHandle {
+  const { label, ...loop } = opts;
+  const profiler = frameProfilerFromEnv(label);
   return attachRafLoopCore({
-    ...opts,
+    ...loop,
     fpsCap: () => useStore.getState().fpsCap,
     reportFps: (fps) => useStore.getState().setFps(fps),
+    ...(profiler ? { profile: profiler.profile } : {}),
   });
 }

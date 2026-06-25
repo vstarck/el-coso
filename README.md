@@ -83,7 +83,7 @@ See [`docs/guide.md`](docs/guide.md#scaffold-a-new-substrate).
 npm run export -- <substrate-id>
 ```
 
-Builds a self-contained, single-file HTML at `dist-embed/<id>.html`.
+Builds a self-contained, single-file HTML at `dist-embed/<id>/<id>.html`.
 
 See [`docs/guide.md`](docs/guide.md#export-an-embed).
 

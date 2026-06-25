@@ -70,11 +70,29 @@ export type RafLoopCoreOpts = {
   /** Rolling FPS readout sink, sampled ~every 500ms (and 0 on stop). Default
    * inert. */
   reportFps?: (fps: number) => void;
+  /** Dev-only per-phase frame-cost sink. When omitted the loop adds zero
+   * overhead (no extra `performance.now()` calls). When set, each frame emits a
+   * `tick`/`render`/`frame` timing — the cross-browser signal `reportFps` can't
+   * give: a single 528ms spike is smeared into the 500ms fps mean and vanishes,
+   * but lands here as one `render` sample. Pair with `makeFrameProfiler` (a
+   * sink that warns over budget + tracks worst/p95). */
+  profile?: (sample: FrameProfileSample) => void;
 };
 
 export type RafLoopHandle = {
   /** Halt the loop on the next frame boundary. Idempotent. */
   stop: () => void;
+};
+
+/** One per-frame timing emitted to an injected `profile` sink. `tick` is the
+ *  whole accumulator-drain (all ticks this frame summed), `render` the single
+ *  render call, `frame` the whole handler. Phases that didn't run that frame
+ *  (e.g. `tick` while paused, `render` while an inactive embed skips it) emit
+ *  nothing. The sample carries no lens identity — that's a constant the caller's
+ *  sink closes over (keeps the core host-agnostic). */
+export type FrameProfileSample = {
+  phase: "tick" | "render" | "frame";
+  ms: number;
 };
 
 function computeFocused(): boolean {
@@ -88,6 +106,9 @@ export function attachRafLoopCore(opts: RafLoopCoreOpts): RafLoopHandle {
   const speedMult = opts.speedMult ?? (() => 1);
   const fpsCap = opts.fpsCap ?? (() => 0);
   const reportFps = opts.reportFps ?? (() => {});
+  // Undefined ⇒ zero added cost (the `performance.now()` brackets below are
+  // skipped entirely). Captured once so the hot path branches on a local.
+  const profile = opts.profile;
 
   let stopped = false;
   let tick_accumulator = 0;
@@ -124,11 +145,13 @@ export function attachRafLoopCore(opts: RafLoopCoreOpts): RafLoopHandle {
 
     const active = isActive();
     if (tick !== undefined && active && isPlaying()) {
+      const t0 = profile ? performance.now() : 0;
       tick_accumulator += speedMult() * TARGET_BASELINE_HZ * (dt_ms / 1000);
       while (tick_accumulator >= 1 && active && isPlaying() && !stopped) {
         tick();
         tick_accumulator -= 1;
       }
+      if (profile) profile({ phase: "tick", ms: performance.now() - t0 });
     }
     // Render: the app default (built-in focus gate) keeps rendering while
     // unfocused so resize/redraw stays responsive. A host with an INJECTED
@@ -136,8 +159,11 @@ export function attachRafLoopCore(opts: RafLoopCoreOpts): RafLoopHandle {
     // inactive too — no point redrawing an off-screen embed, which is the real
     // CPU win for a heavy render (a self-playing embed scrolled out of a feed).
     if (active || owns_focus_gate) {
+      const t0 = profile ? performance.now() : 0;
       render();
+      if (profile) profile({ phase: "render", ms: performance.now() - t0 });
     }
+    if (profile) profile({ phase: "frame", ms: performance.now() - now });
 
     frames_since_sample += 1;
     const elapsed = now - last_sample_time;

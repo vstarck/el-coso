@@ -52,7 +52,7 @@ Whether it's on is owned by the theme (above).
 ## Embed
 
 ```
-npm run export -- tts                  # dist-embed/tts.html (self-contained)
+npm run export -- tts                  # dist-embed/tts/tts.html (self-contained)
 npm run export -- tts --set theme=modern --speed=2x
 npm run export -- tts --set font_size=24
 ```

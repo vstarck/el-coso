@@ -181,6 +181,7 @@ export function mountSubstrate(
   const mounted = mountHost(el, lens, history, {
     host,
     renderSize: substrate.meta.renderSize,
+    profileLabel: `${substrate.meta.id}/${lensId}`,
     ...(config.touchAction ? { touchAction: config.touchAction } : {}),
   });
 

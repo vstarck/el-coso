@@ -165,7 +165,7 @@ npm run export -- <substrate-id>
 ```
 
 This bundles a substrate into a **self-contained, React-free single file** —
-`dist-embed/<id>.html` (plus a reusable `<id>-embed.js`) — that mounts the
+`dist-embed/<id>/<id>.html` (plus a reusable `<id>-embed.js`) — that mounts the
 world with no chrome and no framework, suitable for dropping into any page.
 
 The whole run is setupable from the command line:

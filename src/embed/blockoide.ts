@@ -23,6 +23,7 @@ import type { TunableValue } from "@/lenses/types";
 // The host-agnostic rAF driver — the same loop the React chrome runs, minus the
 // store glue. The embed injects nothing (no fps cap, no fps readout).
 import { attachRafLoopCore } from "@/lib/lens-host/raf-loop-core";
+import { frameProfilerFromEnv } from "@/lib/lens-host/frame-profiler";
 import sprint from "@/substrates/blockoide/puzzles/sprint.json";
 // CSS as strings (no emitted .css file, no global injection) — injected into
 // the embed's shadow root so the bundle is a single self-contained JS and
@@ -109,11 +110,13 @@ export function mountBlockoide(
 
   // Real-time loop — the shared host-agnostic driver. Tick gated on the
   // embed's own play flag + window focus; render runs every frame.
+  const profiler = frameProfilerFromEnv("blockoide");
   const loop = attachRafLoopCore({
     render: () => deck.renderFrom(history.substrate.read),
     tick: deck.tick,
     isPlaying: () => playing,
     speedMult: deck.speedMult,
+    ...(profiler ? { profile: profiler.profile } : {}),
   });
 
   return {

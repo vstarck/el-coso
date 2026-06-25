@@ -21,8 +21,14 @@
  *   --skip-typecheck     skip the tsc --noEmit gate
  *   --skip-guest         don't (re)build the SDK guest page (dist-embed/embed.html)
  *
- * Output: dist-embed/<id>.html  +  dist-embed/<id>-embed.js  +  dist-embed/embed.html
- *         (the last is the spec/25 SDK guest runtime, shared by all embeds)
+ * Output: dist-embed/<id>/<id>.html  +  dist-embed/<id>/<id>-embed.js
+ *         +  dist-embed/embed.html  +  dist-embed/sdk.js
+ *         The per-substrate deliverables go in their own dist-embed/<id>/ dir
+ *         (matches the Conductor's default bundle URL `${base}<id>/<id>-embed.js`).
+ *         embed.html (SDK guest runtime, loaded by each iframe) and sdk.js (SDK
+ *         host bundle, `window.ElCoso`, loaded by the portfolio page) are the
+ *         substrate-agnostic spec/25 runtime pair — they stay at the dist-embed
+ *         root where one copy of each serves every embed. `--skip-guest` skips both.
  *
  * Substrates with a bespoke react-less entry (blockoide) are built from it;
  * everything else uses the generic registry-free `mountSubstrate`. A substrate
@@ -183,6 +189,27 @@ ${css}
 `;
 }
 
+// The SDK host bundle (spec/25) — substrate-agnostic counterpart of embed.html.
+// An IIFE that attaches `window.ElCoso.createConductor`, so a plain-<script>
+// portfolio page can drive embeds without a bundler. Kept as a standalone file
+// (loaded via <script src>), not inlined. Emitted alongside the guest page.
+function emitSdkBundle() {
+  const file = "sdk.js";
+  console.log("• building SDK host bundle (sdk.js)…");
+  execFileSync("npx", ["vite", "build", "--config", "vite.embed.config.ts"], {
+    cwd: ROOT,
+    stdio: "inherit",
+    env: {
+      ...process.env,
+      COSO_EMBED_ENTRY: "src/embed/sdk/index.ts",
+      COSO_EMBED_NAME: "ElCoso",
+      COSO_EMBED_FILE: file,
+    },
+  });
+  const js = fs.readFileSync(path.join(DIST, file), "utf8");
+  console.log(`  → dist-embed/sdk.js (${(js.length / 1024).toFixed(1)} KB, window.ElCoso)`);
+}
+
 function emitGuestPage() {
   const file = "embed-runtime.js";
   console.log("• building embed guest runtime (embed.html)…");
@@ -235,8 +262,13 @@ function main() {
     execFileSync("npx", ["tsc", "--noEmit"], { cwd: ROOT, stdio: "inherit" });
   }
 
-  // The SDK guest page (spec/25) — substrate-agnostic, built once per run.
-  if (!flags["skip-guest"]) emitGuestPage();
+  // The SDK runtime pair (spec/25) — substrate-agnostic, built once per run:
+  // the guest page (embed.html) every iframe loads + the host bundle (sdk.js)
+  // the portfolio page loads. Both land at the dist-embed root.
+  if (!flags["skip-guest"]) {
+    emitGuestPage();
+    emitSdkBundle();
+  }
 
   const before = listFiles(DIST);
   console.log(`• building ${id} embed (entry: ${entry})…`);
@@ -263,16 +295,21 @@ function main() {
     }
   }
 
-  console.log(`  → dist-embed/${jsFile} (${(js.length / 1024).toFixed(1)} KB)`);
+  // Per-substrate output dir: each export's deliverables live in dist-embed/<id>/
+  // rather than piling into the flat root. (The shared SDK guest runtime,
+  // embed.html, is substrate-agnostic and stays at the dist-embed root.)
+  const OUT = path.join(DIST, id);
+  fs.mkdirSync(OUT, { recursive: true });
+  fs.renameSync(path.join(DIST, jsFile), path.join(OUT, jsFile));
+  console.log(`  → dist-embed/${id}/${jsFile} (${(js.length / 1024).toFixed(1)} KB)`);
 
   if (flags["js-only"]) return;
 
   const title = flags.title ?? `${id} — El Coso`;
   const config = buildEmbedConfig(flags, tunables, bespoke ? id : undefined);
   const html = standaloneHtml({ title, js, css, global, mountFn, config });
-  const htmlPath = path.join(DIST, `${id}.html`);
-  fs.writeFileSync(htmlPath, html);
-  console.log(`  → dist-embed/${id}.html (${(html.length / 1024).toFixed(1)} KB, self-contained)`);
+  fs.writeFileSync(path.join(OUT, `${id}.html`), html);
+  console.log(`  → dist-embed/${id}/${id}.html (${(html.length / 1024).toFixed(1)} KB, self-contained)`);
 }
 
 main();

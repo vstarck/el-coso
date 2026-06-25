@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>El Coso — Embed SDK demo</title>
+<!--
+  ElCoso Embed SDK — Conductor demo (spec/25).
+
+  A host page that mounts substrate embeds with the public SDK and drives them
+  from its own UI. This is the imperative pattern: createConductor → per-embed
+  EmbedRemote → wire your own buttons. (The declarative `data-coso` + enhance()
+  pattern is a trivial derivation — see the README.)
+
+  Run it: `npm run dev`, then open http://localhost:5173/portfolio
+  (the dev server serves /embeds/* from dist-embed/ and this file at /portfolio;
+  build the artifacts first with `npm run export -- <id>`).
+
+  Deploy it: host dist-embed/ under your own origin (same-origin keeps the
+  viewport-gate — embeds sleep when scrolled away / tab hidden) and point
+  `runtime` + `base` at it. Swap the substrate ids/config below for your own.
+-->
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; padding: 2rem; background: #0b0b0e; color: #d6d6dd;
+    font: 15px/1.5 ui-sans-serif, system-ui, sans-serif;
+  }
+  h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
+  p.lede { color: #8b8b96; margin: 0 0 1.5rem; }
+  .bar { display: flex; gap: .5rem; align-items: center; margin-bottom: 1.5rem; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.25rem; }
+  .card { background: #131318; border: 1px solid #24242c; border-radius: 14px; overflow: hidden; }
+  .card .frame { position: relative; }
+  .card iframe { display: block; width: 100%; aspect-ratio: 7 / 4; border: 0; background: #000; }
+  .card .controls { display: flex; gap: .4rem; align-items: center; padding: .6rem .8rem; flex-wrap: wrap; }
+  .card h2 { font-size: .95rem; margin: 0; flex: 1; }
+  button, select {
+    background: #1d1d25; color: #d6d6dd; border: 1px solid #2e2e38; border-radius: 8px;
+    padding: .35rem .6rem; font: inherit; cursor: pointer;
+  }
+  button:hover, select:hover { border-color: #4a4a58; }
+  button[aria-pressed="true"] { background: #2b3a5c; border-color: #3d5a8c; }
+  footer { margin-top: 1.5rem; color: #6f6f7a; font-size: .8rem; font-family: ui-monospace, monospace; }
+  footer .ok { color: #6fcf8f; }
+  footer .err { color: #e06c6c; }
+</style>
+</head>
+<body>
+
+<h1>El Coso — Embed SDK</h1>
+<p class="lede">Host-side <strong>Conductor</strong> mounting substrate embeds. One page, its own controls.</p>
+
+<div class="bar">
+  <button id="pauseAll" aria-pressed="false">⏸ pause all</button>
+  <span style="color:#6f6f7a">global autoplay policy — remembered across visits</span>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <div class="frame"><div id="cell-tts"></div></div>
+    <div class="controls">
+      <h2>tts — minimal Tetris</h2>
+      <button data-act="toggle" data-for="tts">⏯</button>
+      <button data-act="reset"  data-for="tts">⟲</button>
+      <select id="tts-theme" title="named command: theme">
+        <option value="default">default</option>
+        <option value="boomer-blue">boomer-blue</option>
+        <option value="modern">modern</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="frame"><div id="cell-conway"></div></div>
+    <div class="controls">
+      <h2>Conway's Game of Life</h2>
+      <button data-act="toggle" data-for="conway">⏯</button>
+      <button data-act="reset"  data-for="conway">⟲</button>
+    </div>
+  </div>
+</div>
+
+<footer id="status">booting…</footer>
+
+<script src="/embeds/sdk.js"></script>
+<script>
+(function () {
+  // 1. One conductor for the whole page.
+  var coso = window.ElCoso.createConductor({
+    runtime: "/embeds/embed.html",            // the shared guest runtime
+    base: "/embeds/",                          // bundles → /embeds/<id>/<id>-embed.js
+    autoplay: { default: true, persist: "coso-autoplay" }, // policy survives reloads
+  });
+
+  // 2. Mount the embeds. (Swap these for your own substrates/config.)
+  var remotes = {
+    tts: coso.embed("#cell-tts", {
+      substrate: "tts",
+      config: { puzzle: "classic" },
+      title: "tts — minimal Tetris",
+    }),
+    conway: coso.embed("#cell-conway", {
+      substrate: "conway",
+      title: "Conway's Game of Life",
+    }),
+  };
+
+  // 3. Status strip — reflects each embed's handshake state.
+  var status = {};
+  function render() {
+    document.getElementById("status").innerHTML = Object.keys(remotes).map(function (id) {
+      var s = status[id] || { kind: "wait", text: "…" };
+      var cls = s.kind === "ok" ? "ok" : s.kind === "err" ? "err" : "";
+      return '<span class="' + cls + '">' + id + ": " + s.text + "</span>";
+    }).join("   ·   ");
+  }
+  Object.keys(remotes).forEach(function (id) {
+    var r = remotes[id];
+    r.on("ready", function (m) {            // fired once the guest reports `mounted`
+      status[id] = { kind: "ok", text: "ready (lens " + m.lens + ", " + m.tunables.length + " tunables)" };
+      render();
+    });
+    r.on("error", function (e) {
+      status[id] = { kind: "err", text: "error: " + (e && e.message || e) };
+      render();
+    });
+    r.on("state", function (s) {           // play/pause echoes
+      if (status[id] && status[id].kind === "ok") {
+        status[id].text = status[id].text.replace(/ — (playing|paused)$/, "") + " — " + (s.playing ? "playing" : "paused");
+        render();
+      }
+    });
+  });
+  render();
+
+  // 4. Per-embed buttons → the EmbedRemote verbs.
+  document.querySelectorAll("button[data-act]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var r = remotes[btn.dataset.for];
+      if (!r) return;
+      if (btn.dataset.act === "toggle") r.toggle();
+      if (btn.dataset.act === "reset") r.reset();
+    });
+  });
+
+  // 5. Named command (tts exposes a `theme` command — same as typing `theme <name>`).
+  document.getElementById("tts-theme").addEventListener("change", function (e) {
+    remotes.tts.command("theme", e.target.value);
+  });
+
+  // 6. Global pause-all → the conductor's autoplay policy (drives every non-pinned embed).
+  var pauseBtn = document.getElementById("pauseAll");
+  function reflect(on) {
+    pauseBtn.setAttribute("aria-pressed", String(!on));
+    pauseBtn.textContent = on ? "⏸ pause all" : "▶ play all";
+  }
+  pauseBtn.addEventListener("click", function () { coso.toggleAutoplay(); });
+  coso.on("change", reflect);
+  reflect(coso.autoplay());
+})();
+</script>
+</body>
+</html>

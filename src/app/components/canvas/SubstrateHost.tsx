@@ -175,6 +175,7 @@ export function SubstrateHost() {
               resolveActiveSceneIfTerminal();
             },
         isPlaying: () => useStore.getState().playing,
+        label: session.active_substrate_id,
       };
       // No tick driver while reviewing — the recording is frozen; the user
       // scrubs the playhead, the render samples it.
