@@ -1,8 +1,11 @@
-/* tts themes — the single entity that owns the lens's whole look: the readout
- * text color, the terminal background, and whether the CRT treatment (wobble /
- * scanlines / phosphor glow) is on. Pieces are still told apart by glyph, not
- * color. Selected in chrome (the `theme` enum), via the export (`--set
- * theme=modern`), or with the `theme NAME` command.
+/* Terminal-kit themes — the single entity that owns a terminal lens's whole
+ * look: the readout text color, the terminal background, and whether the CRT
+ * treatment (wobble / scanlines / phosphor glow) is on. Game pieces are still
+ * told apart by glyph, not color.
+ *
+ * `THEMES` is a shared default palette set. A substrate may use it as-is, or
+ * define its own `Record<string, Theme>` with the exported `Theme` type — the
+ * kit only depends on the shape, not on these particular entries.
  */
 
 export type Theme = {

@@ -121,6 +121,7 @@ function buildEntry(mod: SubstrateModule): SubstrateEntry {
 const ORDER = [
   "conway",
   "tts",
+  "tfps",
   "blockoide",
   "tron",
   "pentris",

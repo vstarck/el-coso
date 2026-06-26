@@ -43,11 +43,15 @@ import type {
   SubstrateState,
 } from "../engine";
 import { renderJson } from "./render";
-import { CRT_DEFAULT_FONT_PX, mountCrtScreen } from "./crt";
-import { mountTerminal } from "./terminal";
+import {
+  CRT_DEFAULT_FONT_PX,
+  mountCrtScreen,
+  mountTerminal,
+  THEMES,
+  DEFAULT_THEME,
+} from "@/lib/terminal";
 import { makeAutopilot } from "./autopilot";
 import { attachInput } from "./input";
-import { THEMES, DEFAULT_THEME } from "./theme";
 
 // Render envelope: target width is 640px (the embed footprint); the readout
 // flows top-to-bottom inside it with no height cap (BOUNDED, height: auto).
@@ -140,7 +144,11 @@ function mountTts(
 
   // --- DOM (Q1: dom) — the CRT screen owns the <pre> text surface, the
   // scanline overlay, and its stylesheet (see ./crt). 640px wide, no canvas.
-  const crt = mountCrtScreen(container, { width: TARGET_W });
+  const crt = mountCrtScreen(container, {
+    width: TARGET_W,
+    classPrefix: "tts",
+    ariaLabel: "tts state",
+  });
 
   // Autopilot (the `auto` command): while on, the tick loop feeds the piece
   // `pilot.inputs(state)` instead of the keyboard (a paced greedy player; see
@@ -243,6 +251,8 @@ function mountTts(
   // into the output area).
   const term = mountTerminal(crt.text, {
     keyTarget: crt.root,
+    classPrefix: "tts",
+    launchCommand: "npm run tts",
     onCommand: (line) => {
       const [name, ...args] = line.toLowerCase().split(/\s+/);
       if (name) commandIndex.get(name)?.run(args);

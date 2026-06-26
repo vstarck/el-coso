@@ -1,22 +1,23 @@
-/* tts terminal furniture — the lines around the JSON readout that make the
- * lens read as a shell session:
+/* Terminal-kit furniture — the lines around a lens's readout that make it read
+ * as a shell session:
  *
- *     ⋊> ~ npm run tts        ← the command that "ran" tts (header)
- *     { ...state JSON... }     ← the live readout (body, rewritten each tick)
- *     <command output>         ← responses to commands (e.g. `help`)
- *     theme█                   ← the in-tts command line (typed input + cursor)
+ *     ⋊> ~ npm run <game>      ← the command that "ran" the game (header)
+ *     { ...state readout... }   ← the live body, rewritten each tick
+ *     <command output>          ← responses to commands (e.g. `help`)
+ *     theme█                    ← the in-game command line (typed input + cursor)
  *
- * No prompt glyph on the footer: the player is inside tts, not the shell. The
- * footer is a real command line — printable keys type into a buffer, Enter
+ * No prompt glyph on the footer: the player is inside the game, not the shell.
+ * The footer is a real command line — printable keys type into a buffer, Enter
  * submits it (reported via `onCommand`; the lens dispatches). `reset` rebuilds
  * fresh furniture (a re-launch).
  *
  * Built inside the CRT screen's text surface, so the blur / glow / wobble all
- * cascade onto it for free. Prompt + launch line are constants below.
+ * cascade onto it for free. The prompt is a shared default; the launch command
+ * is per-substrate. Class names + keyframe are scoped by `classPrefix` so two
+ * terminals on one page don't collide.
  */
 
-const FISH_PROMPT = "⋊> ~ "; // the fish-shell prompt glyph (the player's love)
-const LAUNCH_COMMAND = "npm run tts"; // the command shown as having started tts
+const DEFAULT_PROMPT = "⋊> ~ "; // the fish-shell prompt glyph (the player's love)
 
 const CURSOR_GLYPH = "█";
 const BLINK_MS = 1000;
@@ -25,10 +26,24 @@ const BLINK_MS = 1000;
 // deliberately excluded so they stay with the lens.
 const TYPING_KEY = /^[a-zA-Z0-9-]$/;
 
-const STYLE = `
-@keyframes tts-term-blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
-.tts-term-cursor { animation: tts-term-blink ${BLINK_MS}ms infinite; }
+function termNames(prefix: string) {
+  return {
+    cursor: `${prefix}-term-cursor`,
+    body: `${prefix}-term-body`,
+    output: `${prefix}-term-output`,
+    input: `${prefix}-term-input`,
+    blinkKeyframe: `${prefix}-term-blink`,
+  };
+}
+
+// The blink stylesheet, scoped to `prefix`. Pure (no DOM) so it can be tested.
+export function buildTerminalCss(prefix: string): string {
+  const n = termNames(prefix);
+  return `
+@keyframes ${n.blinkKeyframe} { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+.${n.cursor} { animation: ${n.blinkKeyframe} ${BLINK_MS}ms infinite; }
 `;
+}
 
 export type TerminalOptions = {
   // Fired when the player submits a non-empty line (Enter). The terminal has
@@ -37,10 +52,17 @@ export type TerminalOptions = {
   // Element the command-line keydown listens on — the focusable CRT screen,
   // so typing only reaches THIS sandbox while it's focused.
   keyTarget: HTMLElement;
+  // Namespaces the emitted classes / keyframe (e.g. "tts"). Match the CRT
+  // screen's `classPrefix`.
+  classPrefix: string;
+  // The command shown as having started the game (e.g. "npm run tts").
+  launchCommand: string;
+  // The shell prompt glyph; defaults to the fish-shell prompt.
+  prompt?: string;
 };
 
 export type Terminal = {
-  // Replace the readout body — the lens writes the state JSON here each tick.
+  // Replace the readout body — the lens writes the state readout here each tick.
   setBody(text: string): void;
   // Write (or clear, with "") the command-output area below the readout.
   print(text: string): void;
@@ -49,20 +71,26 @@ export type Terminal = {
   destroy(): void;
 };
 
-function makeCursor(): HTMLSpanElement {
-  const c = document.createElement("span");
-  c.className = "tts-term-cursor";
-  c.textContent = CURSOR_GLYPH;
-  c.setAttribute("aria-hidden", "true");
-  return c;
-}
-
 // Build the terminal furniture inside `surface` (the CRT screen's <pre>).
-export function mountTerminal(surface: HTMLElement, opts: TerminalOptions): Terminal {
+export function mountTerminal(
+  surface: HTMLElement,
+  opts: TerminalOptions,
+): Terminal {
+  const n = termNames(opts.classPrefix);
+  const prompt = opts.prompt ?? DEFAULT_PROMPT;
+
   const styleHost = surface.parentElement ?? surface;
   const style = document.createElement("style");
-  style.textContent = STYLE;
+  style.textContent = buildTerminalCss(opts.classPrefix);
   styleHost.appendChild(style);
+
+  function makeCursor(): HTMLSpanElement {
+    const c = document.createElement("span");
+    c.className = n.cursor;
+    c.textContent = CURSOR_GLYPH;
+    c.setAttribute("aria-hidden", "true");
+    return c;
+  }
 
   // Reassigned by `build()` — the live nodes the lens writes through.
   let body!: HTMLSpanElement;
@@ -71,18 +99,18 @@ export function mountTerminal(surface: HTMLElement, opts: TerminalOptions): Term
 
   let buffer = "";
 
-  // Lay out: launch line, live JSON body, command-output area, then the
-  // command line (typed text + blinking cursor).
+  // Lay out: launch line, live body, command-output area, then the command
+  // line (typed text + blinking cursor).
   function build(): void {
     surface.textContent = "";
-    const header = document.createTextNode(`${FISH_PROMPT}${LAUNCH_COMMAND}\n`);
+    const header = document.createTextNode(`${prompt}${opts.launchCommand}\n`);
     body = document.createElement("span");
-    body.className = "tts-term-body";
+    body.className = n.body;
     output = document.createElement("span");
-    output.className = "tts-term-output";
+    output.className = n.output;
     const footerBreak = document.createTextNode(`\n`);
     input = document.createElement("span");
-    input.className = "tts-term-input";
+    input.className = n.input;
     surface.append(header, body, output, footerBreak, input, makeCursor());
   }
   build();
