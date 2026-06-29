@@ -26,10 +26,8 @@ import type {
   MountedLens,
   TunableValue,
 } from "@/lenses/types";
-import {
-  mountCrtScreen,
-  mountTerminal,
-} from "@/lib/terminal";
+import { mountCrtScreen } from "@/lib/terminal";
+import { withConsole } from "@/lenses/withConsole";
 import type {
   TfpsCommitPayload,
   TfpsConfig,
@@ -37,7 +35,7 @@ import type {
   SubstrateState,
 } from "../engine";
 import { COMMIT_PERIOD } from "../engine";
-import { castColumns } from "./raycast";
+import { castColumns } from "@/lib/raycast";
 import { botInputs } from "./bot";
 import { attachInput } from "./input";
 import {
@@ -87,33 +85,20 @@ const TUNABLES: LensTunable[] = [
 ];
 
 const AUTOPILOT_DEFAULT_ON = true;
-const HELP_DEFAULT_ON = true;
 
-type Command = {
-  name: string;
-  aliases?: string[];
-  help?: string;
-  run(args: string[]): void;
-};
-
-function buildHelpText(commands: Command[]): string {
-  const listed = commands.filter((c) => c.help);
-  const labels = listed.map((c) => [c.name, ...(c.aliases ?? [])].join(", "));
-  const width = Math.max(0, ...labels.map((l) => l.length));
-  return [
-    "commands:",
-    ...listed.map((c, i) => `  ${labels[i]!.padEnd(width)}   ${c.help}`),
-  ].join("\n");
-}
-
+// tfps's OWN console verbs (spec/26). Transport (play/pause/step/speed),
+// `set theme <name>`, `help`, and `describe` come free as console built-ins, so
+// only the substrate-specific verbs are declared here. `theme` is kept as a
+// friendly alias for `set theme` (its label advertises the options).
 const COMMAND_SPECS: EmbedCommandSpec[] = [
   { name: "restart", label: "back to spawn" },
   { name: "auto", label: "toggle self-play" },
-  { name: "pause", label: "stop the clock" },
-  { name: "play", label: "resume" },
-  { name: "theme", label: "set theme", args: [{ name: "name", type: "string" }] },
+  {
+    name: "theme",
+    label: `set theme (${Object.keys(THEMES).join(" · ")})`,
+    args: [{ name: "name", type: "string" }],
+  },
   { name: "map", label: "toggle minimap" },
-  { name: "help", label: "toggle command list" },
 ];
 
 function headingDeg(angle: number): number {
@@ -133,6 +118,10 @@ function mountTfps(
     classPrefix: "tfps",
     ariaLabel: "tfps view",
   });
+  // The command line lived in the CRT's <pre>; the guake console (withConsole,
+  // wired at the bottom) replaces it, so collapse the empty text strip — the
+  // canvas + scanline overlay are the whole screen now.
+  crt.text.style.display = "none";
 
   // --- The 3D view canvas, prepended above the command-line <pre> ----------
   const canvas = document.createElement("canvas");
@@ -148,7 +137,6 @@ function mountTfps(
 
   // --- Run state -----------------------------------------------------------
   let autopilot = AUTOPILOT_DEFAULT_ON;
-  let help_shown = HELP_DEFAULT_ON;
   let map_shown = true; // the top-right minimap HUD
   let speed_mult = 1;
   let last_tick = -1;
@@ -167,9 +155,6 @@ function mountTfps(
   }
 
   // --- Commands ------------------------------------------------------------
-  function renderHelp(): void {
-    term.print(help_shown ? buildHelpText(COMMANDS) : "");
-  }
   function setAuto(on: boolean): void {
     autopilot = on;
     last_tick = -1;
@@ -178,54 +163,40 @@ function mountTfps(
   function restartRun(): void {
     historyReset(history);
     autopilot = AUTOPILOT_DEFAULT_ON;
-    help_shown = HELP_DEFAULT_ON;
     last_tick = -1;
-    term.reset();
-    renderHelp();
     host.setPlayheadTick(0);
     host.bumpHistoryVersion();
     host.setPlaying(true);
   }
-  const COMMANDS: Command[] = [
-    { name: "restart", help: "back to spawn", run: restartRun },
-    { name: "auto", help: "toggle self-play", run: () => setAuto(!autopilot) },
-    { name: "pause", help: "stop the clock", run: () => host.setPlaying(false) },
-    {
-      name: "play",
-      aliases: ["unpause"],
-      help: "resume",
-      run: () => host.setPlaying(true),
-    },
-    {
-      name: "theme",
-      help: `theme NAME — ${Object.keys(THEMES).join(" · ")}`,
-      run: (a) => setTunable(["theme"], a[0] ?? ""),
-    },
-    { name: "map", help: "toggle minimap", run: () => {
-      map_shown = !map_shown;
-      last_tick = -1;
-    } },
-    { name: "help", help: "toggle this list", run: () => {
-      help_shown = !help_shown;
-      renderHelp();
-    } },
-  ];
-  const commandIndex = new Map<string, Command>();
-  for (const cmd of COMMANDS) {
-    commandIndex.set(cmd.name, cmd);
-    for (const alias of cmd.aliases ?? []) commandIndex.set(alias, cmd);
+  // Console dispatch (spec/26). tfps's own verbs only — transport + `set theme`
+  // are built-ins. Throws on an unknown name / theme; the console surfaces it.
+  function command(name: string, cmdArgs: unknown[]): void {
+    switch (name) {
+      case "restart":
+        restartRun();
+        break;
+      case "auto":
+        setAuto(!autopilot);
+        break;
+      case "theme": {
+        const themeName = String(cmdArgs[0] ?? "");
+        if (!(themeName in THEMES)) {
+          throw new Error(
+            `unknown theme: ${themeName} — try ${Object.keys(THEMES).join(" / ")}`,
+          );
+        }
+        setTunable(["theme"], themeName);
+        break;
+      }
+      case "map":
+        map_shown = !map_shown;
+        last_tick = -1;
+        break;
+      default:
+        throw new Error(`tfps: unknown command "${name}"`);
+    }
   }
 
-  const term = mountTerminal(crt.text, {
-    keyTarget: crt.root,
-    classPrefix: "tfps",
-    launchCommand: "npm run tfps",
-    onCommand: (line) => {
-      const [name, ...rest] = line.toLowerCase().split(/\s+/);
-      if (name) commandIndex.get(name)?.run(rest);
-    },
-  });
-  renderHelp();
   applyTheme();
 
   // --- Input: arrows take control from the bot -----------------------------
@@ -267,7 +238,7 @@ function mountTfps(
   function hudLine(s: SubstrateState): string {
     const mode = autopilot ? "AUTO" : "PLAYER";
     const pos = `${s.px.toFixed(1)},${s.py.toFixed(1)}`;
-    return ` TFPS · ${config.id.toUpperCase()}   ${mode}   POS ${pos}  HDG ${headingDeg(s.angle)}°   ◄► turn  ▲▼ move`;
+    return ` TFPS · ${config.id.toUpperCase()}   ${mode}   POS ${pos}  HDG ${headingDeg(s.angle)}°   ◄► turn  ▲▼ move   \` console`;
   }
   function renderFrom(state: SubstrateState): void {
     if (state.tick === last_tick) return;
@@ -320,7 +291,6 @@ function mountTfps(
   return {
     unmount: () => {
       playerInput.detach();
-      term.destroy();
       if (canvas.parentNode === crt.root) crt.root.removeChild(canvas);
       crt.destroy();
     },
@@ -344,15 +314,11 @@ function mountTfps(
     getTunable,
     setTunable,
     subscribeTunables,
-    command: (name, cmdArgs) => {
-      const cmd = commandIndex.get(String(name).toLowerCase());
-      if (!cmd) throw new Error(`tfps: unknown command "${name}"`);
-      cmd.run(cmdArgs.map((a) => String(a)));
-    },
+    command,
   };
 }
 
-export const tfpsLens: Lens<
+const tfpsLensBase: Lens<
   SubstrateState,
   TfpsConfig,
   TfpsInputs,
@@ -370,3 +336,10 @@ export const tfpsLens: Lens<
   theme: { accent: THEMES[DEFAULT_THEME]!.accent },
   mount: mountTfps,
 };
+
+// The guake console replaces tfps's old in-CRT command line: backtick drops a
+// fish-prompt terminal over the screen. Built-ins (transport · `set theme`)
+// plus tfps's own restart/auto/theme/map (spec/26).
+export const tfpsLens = withConsole(tfpsLensBase, {
+  description: "terminal FPS — an ASCII raycaster",
+});

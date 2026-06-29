@@ -24,6 +24,7 @@ import { attachPanDrag } from "@/lib/canvas/pan-drag";
 import type {
   Cadence,
   CommitGlyph,
+  EmbedCommandSpec,
   Lens,
   LensMountArgs,
   LensTunable,
@@ -32,6 +33,7 @@ import type {
   TunableValue,
   ViewportInset,
 } from "@/lenses/types";
+import { withConsole } from "@/lenses/withConsole";
 import { drawConwayFrame } from "./render";
 
 const CELL_PX = 12;
@@ -68,6 +70,34 @@ type LensState = {
 
 const TUNABLES: LensTunable[] = [
   { id: "show_tick_counter", group: "Lens", label: "Generation overlay", type: "enum", options: ["true", "false"], target: "lens", path: ["show_tick_counter"] },
+];
+
+// Stampable patterns for the `spawn` console command — cell offsets from the
+// top-left origin the player names.
+const PATTERNS: Record<string, ReadonlyArray<readonly [number, number]>> = {
+  glider: [[1, 0], [2, 1], [0, 2], [1, 2], [2, 2]],
+  block: [[0, 0], [1, 0], [0, 1], [1, 1]],
+  blinker: [[0, 0], [1, 0], [2, 0]],
+};
+
+// Console command surface (spec/25). The guake console (wired via withConsole
+// at the bottom) reads this for `help` + Tab-completion and dispatches each
+// line through the MountedLens `command` below. These are conway's OWN verbs —
+// real input into the substrate that edits the live state. Transport
+// (play/pause/step) + `set <tunable>` come for free as console built-ins
+// (spec/26 registry), so they're deliberately not declared here.
+const COMMAND_SPECS: EmbedCommandSpec[] = [
+  { name: "clear", label: "kill every cell" },
+  { name: "random", label: "seed a random soup", args: [{ name: "density", type: "number" }] },
+  {
+    name: "spawn",
+    label: "stamp glider|block|blinker at x y",
+    args: [
+      { name: "pattern", type: "string" },
+      { name: "x", type: "number" },
+      { name: "y", type: "number" },
+    ],
+  },
 ];
 
 function mountConway(
@@ -339,6 +369,60 @@ function mountConway(
     };
   }
 
+  // Stamp a named pattern into the live cells, wrapping at the torus edges.
+  function stampPattern(name: string, ox: number, oy: number): void {
+    const offsets = PATTERNS[name];
+    if (!offsets) {
+      throw new Error(
+        `unknown pattern: ${name} — try ${Object.keys(PATTERNS).join(" / ")}`,
+      );
+    }
+    const cells = history.substrate.read.cells;
+    for (const [dx, dy] of offsets) {
+      const x = (((ox + dx) % config.W) + config.W) % config.W;
+      const y = (((oy + dy) % config.H) + config.H) % config.H;
+      cells[y * config.W + x] = 1;
+    }
+  }
+
+  // Console command dispatch (spec/25). State edits mutate the live read buffer
+  // — the rAF render picks them up next frame, no commit needed — and clear the
+  // stale-detector so a fresh soup isn't matched against pre-edit memory.
+  // Throws on an unknown name; the console surfaces it (never a silent no-op).
+  function command(name: string, commandArgs: unknown[]): void {
+    switch (name) {
+      case "clear":
+        history.substrate.read.cells.fill(0);
+        resetStaleMemory();
+        break;
+      case "random": {
+        const density = typeof commandArgs[0] === "number"
+          ? Math.max(0, Math.min(1, commandArgs[0]))
+          : 0.3;
+        const cells = history.substrate.read.cells;
+        for (let i = 0; i < cells.length; i++) {
+          cells[i] = Math.random() < density ? 1 : 0;
+        }
+        resetStaleMemory();
+        break;
+      }
+      case "spawn": {
+        const pattern = typeof commandArgs[0] === "string" ? commandArgs[0] : "glider";
+        const x = typeof commandArgs[1] === "number"
+          ? Math.floor(commandArgs[1])
+          : Math.floor(config.W / 2);
+        const y = typeof commandArgs[2] === "number"
+          ? Math.floor(commandArgs[2])
+          : Math.floor(config.H / 2);
+        stampPattern(pattern, x, y);
+        resetStaleMemory();
+        break;
+      }
+      default:
+        throw new Error(`unknown command: ${name}`);
+    }
+  }
+
   return {
     unmount: () => {
       panDrag.detach();
@@ -377,10 +461,11 @@ function mountConway(
     getTunable,
     setTunable,
     subscribeTunables,
+    command,
   };
 }
 
-export const conwayLens: Lens<
+const conwayLensBase: Lens<
   SubstrateState,
   ConwayConfig,
   ConwayInputs,
@@ -399,5 +484,13 @@ export const conwayLens: Lens<
   //                 non-destructive "go back here" + replay.
   // SAFE_AREA     — tick counter dodges chrome-published viewport inset.
   features: ["AUTOPLAY", "SINGLE_BRANCH", "SAFE_AREA"],
+  // Console command surface — `clear`/`random`/`spawn` edit live state,
+  // `step`/`play`/`pause` drive transport (dispatched via the guake console).
+  commands: COMMAND_SPECS,
   mount: mountConway,
 };
+
+// Conway is the reference adopter of the guake-style command console: backtick
+// drops a fish-prompt terminal over the grid for real text input into the
+// substrate. The decorator forwards every other lens method to the base.
+export const conwayLens = withConsole(conwayLensBase);

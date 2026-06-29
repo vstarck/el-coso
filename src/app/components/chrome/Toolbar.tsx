@@ -27,17 +27,20 @@ import { hudIcon } from "@/app/hudIcons";
 import { goBackToCommit } from "@/app/lib/bttf";
 import { captureState } from "@/app/lib/captureState";
 import { isSceneChild } from "@/app/lib/scenes/scene-stack";
+import { session, setLens, setPuzzle } from "@/app/session";
 import {
-  chromePanelsFor,
-  session,
-  setLens,
-  setPuzzle,
-  setSubstrate,
-} from "@/app/session";
-import { SUBSTRATE_BY_ID, SUBSTRATES } from "@/app/substrates";
+  featuredSubstrates,
+  SUBSTRATE_BY_ID,
+  SUBSTRATES,
+} from "@/app/substrates";
+import { selectSubstrate } from "@/app/lib/navigate";
 import { useStore } from "@/app/store";
 import { PickerSelect, type PickerItem } from "./PickerSelect";
 import { SpeedSelect } from "./SpeedSelect";
+
+// Sentinel picker id — selecting it opens the full substrate gallery instead
+// of navigating. Substrate ids are package folder names, so this can't collide.
+const MORE_PICKER_ID = "__more__";
 
 export function Toolbar({ onClose }: { onClose?: () => void }) {
   const theme = useStore((s) => s.theme);
@@ -71,7 +74,7 @@ export function Toolbar({ onClose }: { onClose?: () => void }) {
   const sceneVersion = useStore((s) => s.sceneVersion);
   const bumpSession = useStore((s) => s.bumpSession);
   const bumpSessionLensOnly = useStore((s) => s.bumpSessionLensOnly);
-  const applyChromePanels = useStore((s) => s.applyChromePanels);
+  const openGallery = useStore((s) => s.openGallery);
 
   // Suppress eslint — these are the subscriptions, even though we read
   // session.active_substrate_id directly afterwards.
@@ -90,11 +93,25 @@ export function Toolbar({ onClose }: { onClose?: () => void }) {
   const activeSubstrate = SUBSTRATE_BY_ID[substrateId]!;
   const activeLens = session.active_lens;
 
-  const substrateItems: PickerItem[] = SUBSTRATES.map((s) => ({
-    id: s.id,
-    label: s.name.toLowerCase(),
-    description: s.lenses[s.defaultLensId]!.name,
-  }));
+  // Compact picker: favorites only (plus the active substrate if it isn't a
+  // favorite, so the trigger always reflects the real selection), capped by a
+  // "more…" entry that opens the full gallery modal.
+  const featured = featuredSubstrates();
+  const pickerSubstrates = featured.some((s) => s.id === substrateId)
+    ? featured
+    : [activeSubstrate, ...featured];
+  const substrateItems: PickerItem[] = [
+    ...pickerSubstrates.map((s) => ({
+      id: s.id,
+      label: s.name.toLowerCase(),
+      description: s.lenses[s.defaultLensId]!.name,
+    })),
+    {
+      id: MORE_PICKER_ID,
+      label: "more…",
+      description: `browse all ${SUBSTRATES.length} substrates`,
+    },
+  ];
   const puzzleItems: PickerItem[] = activeSubstrate.puzzles.map((p) =>
     p.description
       ? { id: p.id, label: p.id, description: p.description }
@@ -108,15 +125,13 @@ export function Toolbar({ onClose }: { onClose?: () => void }) {
   const showLensPicker = lensItems.length > 1;
 
   function onSubstrateChange(id: string): void {
-    if (!setSubstrate(id)) return;
-    const newDefault = session.active_lens.speeds.find((s) => s.isDefault)?.id
-      ?? session.active_lens.speeds[0]?.id
-      ?? "1x";
-    setSpeedId(newDefault);
-    // Re-apply the new substrate's chrome panel defaults. A substrate switch
-    // re-establishes its preferred layout; runtime toggles don't carry over.
-    applyChromePanels(chromePanelsFor(session.active_substrate_id));
-    bumpSession();
+    if (id === MORE_PICKER_ID) {
+      openGallery();
+      return;
+    }
+    // Speed reset + chrome-panel re-apply + bumpSession all live in the
+    // shared navigation helper (also used by the gallery).
+    selectSubstrate(id);
   }
 
   function onPuzzleChange(id: string): void {

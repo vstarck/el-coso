@@ -8,9 +8,13 @@
   ElCoso Embed SDK — Conductor demo (spec/25).
 
   A host page that mounts substrate embeds with the public SDK and drives them
-  from its own UI. This is the imperative pattern: createConductor → per-embed
-  EmbedRemote → wire your own buttons. (The declarative `data-coso` + enhance()
-  pattern is a trivial derivation — see the README.)
+  from its own UI — AND keeps that UI in sync when the substrate changes state on
+  its own. This is the two-way pattern:
+    • host → embed: verbs (toggle/reset) · tunables (theme, autopilot, terminal)
+    • embed → host: a `state` snapshot ({playing, tunables}) on every change —
+      including substrate-driven ones (open the console with the backtick key and
+      the ❯ button lights up; let tts self-play and the 🤖 toggle reflects it).
+  Render controls from `describe()`'s manifest; mirror their values from `state`.
 
   Run it: `npm run dev`, then open http://localhost:5173/portfolio
   (the dev server serves /embeds/* from dist-embed/ and this file at /portfolio;
@@ -28,6 +32,10 @@
   }
   h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
   p.lede { color: #8b8b96; margin: 0 0 1.5rem; }
+  p.lede kbd {
+    background: #1d1d25; border: 1px solid #2e2e38; border-bottom-width: 2px;
+    border-radius: 5px; padding: 0 .35rem; font: .85em ui-monospace, monospace;
+  }
   .bar { display: flex; gap: .5rem; align-items: center; margin-bottom: 1.5rem; }
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.25rem; }
   .card { background: #131318; border: 1px solid #24242c; border-radius: 14px; overflow: hidden; }
@@ -40,16 +48,23 @@
     padding: .35rem .6rem; font: inherit; cursor: pointer;
   }
   button:hover, select:hover { border-color: #4a4a58; }
+  /* A pressed control = the substrate is in that state RIGHT NOW (driven by the
+     `state` snapshot, not the click) — so it stays honest when the substrate
+     flips it itself (a backtick keypress, autopilot taking over). */
   button[aria-pressed="true"] { background: #2b3a5c; border-color: #3d5a8c; }
-  footer { margin-top: 1.5rem; color: #6f6f7a; font-size: .8rem; font-family: ui-monospace, monospace; }
-  footer .ok { color: #6fcf8f; }
-  footer .err { color: #e06c6c; }
+  button.mono { font-family: ui-monospace, monospace; }
+  footer { margin-top: 1.5rem; color: #6f6f7a; font-size: .8rem; font-family: ui-monospace, monospace; white-space: pre-wrap; }
 </style>
 </head>
 <body>
 
 <h1>El Coso — Embed SDK</h1>
-<p class="lede">Host-side <strong>Conductor</strong> mounting substrate embeds. One page, its own controls.</p>
+<p class="lede">
+  Host-side <strong>Conductor</strong> mounting substrate embeds — its own
+  controls, kept in two-way sync. Try it: press <kbd>`</kbd> inside an embed to
+  open its terminal and watch the <strong>❯</strong> button light up; the play /
+  🤖&nbsp;self-play / theme controls all mirror the substrate live.
+</p>
 
 <div class="bar">
   <button id="pauseAll" aria-pressed="false">⏸ pause all</button>
@@ -61,9 +76,11 @@
     <div class="frame"><div id="cell-tts"></div></div>
     <div class="controls">
       <h2>tts — minimal Tetris</h2>
-      <button data-act="toggle" data-for="tts">⏯</button>
-      <button data-act="reset"  data-for="tts">⟲</button>
-      <select id="tts-theme" title="named command: theme">
+      <button data-act="toggle" data-for="tts" title="play / pause">⏯</button>
+      <button data-act="reset"  data-for="tts" title="restart">⟲</button>
+      <button data-act="tunable-toggle" data-tunable="autopilot" data-for="tts" title="self-play">🤖</button>
+      <button class="mono" data-act="tunable-toggle" data-tunable="console_open" data-for="tts" title="terminal (or press `)">❯</button>
+      <select data-tunable="theme" data-for="tts" title="theme — a tunable, stays in sync">
         <option value="default">default</option>
         <option value="boomer-blue">boomer-blue</option>
         <option value="modern">modern</option>
@@ -75,8 +92,9 @@
     <div class="frame"><div id="cell-conway"></div></div>
     <div class="controls">
       <h2>Conway's Game of Life</h2>
-      <button data-act="toggle" data-for="conway">⏯</button>
-      <button data-act="reset"  data-for="conway">⟲</button>
+      <button data-act="toggle" data-for="conway" title="play / pause">⏯</button>
+      <button data-act="reset"  data-for="conway" title="reset">⟲</button>
+      <button class="mono" data-act="tunable-toggle" data-tunable="console_open" data-for="conway" title="terminal (or press `)">❯</button>
     </div>
   </div>
 </div>
@@ -106,50 +124,77 @@
     }),
   };
 
-  // 3. Status strip — reflects each embed's handshake state.
+  // 3. Reflect a `state` snapshot onto this card's controls. Pressed = the
+  //    substrate is in that state right now (NOT "I clicked it") — so a backtick
+  //    keypress inside the embed, or autopilot flipping itself, updates the UI.
+  function syncControls(id, s) {
+    document.querySelectorAll('[data-for="' + id + '"]').forEach(function (el) {
+      if (el.dataset.act === "toggle") {
+        el.setAttribute("aria-pressed", String(s.playing));
+        el.textContent = s.playing ? "⏸" : "▶";
+      } else if (el.dataset.tunable) {
+        var v = s.tunables[el.dataset.tunable];
+        if (el.tagName === "SELECT") {
+          if (v != null) el.value = String(v);            // enum tunable → the picker
+        } else {
+          el.setAttribute("aria-pressed", String(!!v));   // bool tunable → a toggle
+        }
+      }
+    });
+  }
+
+  // 4. Status strip — shows each embed's handshake + the LIVE snapshot, so you can
+  //    watch `{playing, tunables}` update as you (or the substrate) change things.
   var status = {};
   function render() {
-    document.getElementById("status").innerHTML = Object.keys(remotes).map(function (id) {
-      var s = status[id] || { kind: "wait", text: "…" };
-      var cls = s.kind === "ok" ? "ok" : s.kind === "err" ? "err" : "";
-      return '<span class="' + cls + '">' + id + ": " + s.text + "</span>";
-    }).join("   ·   ");
+    document.getElementById("status").textContent = Object.keys(remotes).map(function (id) {
+      var s = status[id] || { text: "…" };
+      return id + ": " + s.text;
+    }).join("\n");
   }
   Object.keys(remotes).forEach(function (id) {
     var r = remotes[id];
-    r.on("ready", function (m) {            // fired once the guest reports `mounted`
-      status[id] = { kind: "ok", text: "ready (lens " + m.lens + ", " + m.tunables.length + " tunables)" };
+    r.on("ready", function (m) {             // guest reported `mounted` (the manifest)
+      status[id] = { text: "ready — lens " + m.lens + ", tunables [" +
+        m.tunables.map(function (t) { return t.path.join("."); }).join(", ") + "]" };
       render();
     });
     r.on("error", function (e) {
-      status[id] = { kind: "err", text: "error: " + (e && e.message || e) };
+      status[id] = { text: "error: " + (e && e.message || e) };
       render();
     });
-    r.on("state", function (s) {           // play/pause echoes
-      if (status[id] && status[id].kind === "ok") {
-        status[id].text = status[id].text.replace(/ — (playing|paused)$/, "") + " — " + (s.playing ? "playing" : "paused");
-        render();
-      }
+    r.on("state", function (s) {             // the live snapshot — drives the UI
+      syncControls(id, s);
+      status[id] = { text: (s.playing ? "playing" : "paused") + " · " + JSON.stringify(s.tunables) };
+      render();
     });
   });
   render();
 
-  // 4. Per-embed buttons → the EmbedRemote verbs.
+  // 5. Clicks → the EmbedRemote. A tunable-toggle reads the CURRENT value
+  //    (remote.tunables()) and flips it; the resulting `state` echo re-syncs the
+  //    button — we never guess the new state locally.
   document.querySelectorAll("button[data-act]").forEach(function (btn) {
     btn.addEventListener("click", function () {
       var r = remotes[btn.dataset.for];
       if (!r) return;
       if (btn.dataset.act === "toggle") r.toggle();
-      if (btn.dataset.act === "reset") r.reset();
+      else if (btn.dataset.act === "reset") r.reset();
+      else if (btn.dataset.act === "tunable-toggle") {
+        var path = btn.dataset.tunable;
+        r.setTunable(path, !r.tunables()[path]);
+      }
     });
   });
 
-  // 5. Named command (tts exposes a `theme` command — same as typing `theme <name>`).
-  document.getElementById("tts-theme").addEventListener("change", function (e) {
-    remotes.tts.command("theme", e.target.value);
+  // 6. Enum tunable (theme) → setTunable; the `state` echo re-syncs the <select>.
+  document.querySelectorAll("select[data-tunable]").forEach(function (sel) {
+    sel.addEventListener("change", function (e) {
+      remotes[sel.dataset.for].setTunable(sel.dataset.tunable, e.target.value);
+    });
   });
 
-  // 6. Global pause-all → the conductor's autoplay policy (drives every non-pinned embed).
+  // 7. Global pause-all → the conductor's autoplay policy (every non-pinned embed).
   var pauseBtn = document.getElementById("pauseAll");
   function reflect(on) {
     pauseBtn.setAttribute("aria-pressed", String(!on));

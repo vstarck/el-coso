@@ -143,6 +143,26 @@ export type MountedLens<State extends TickedState> = {
   // SDK / host MUST surface that as an error, never swallow it. The lens SHOULD
   // throw on an unknown command name (it propagates to the host's error channel).
   command?: (name: string, args: unknown[]) => void;
+  // The LIVE command set available right now (spec/26 — "ask, don't read"
+  // applied to commands). Absent ⇒ the static `Lens.commands` is the set.
+  // Present ⇒ the console reads THIS for help / completion / dispatch, so a
+  // substrate whose available verbs change with state can express it; the embed
+  // SDK still reads the static `Lens.commands` for `describe()`. Genuinely new
+  // commands may appear (not just gray-outs) — it subsumes a per-command enabled
+  // flag for the same author effort.
+  commands?: () => EmbedCommandSpec[];
+  // Middleware wrapped around every BUILT-IN console command dispatch (spec/26
+  // — transport, `set`/`get`, `describe`, …). The substrate may: throw (reject —
+  // the console prints the error, never silent), `next([...])` (run the default
+  // with rewritten args — validate / clamp), ignore `next` (override entirely),
+  // or augment its returned message. Absent ⇒ built-ins run directly. Only `set`
+  // is exercised today; the seam is general. The substrate's OWN commands
+  // (`command` above) are not wrapped — it already owns them.
+  interceptCommand?: (
+    name: string,
+    args: unknown[],
+    next: (args?: unknown[]) => string | void,
+  ) => string | void;
   // Substrate-specific affordance — drop all player-placed biases. Optional
   // because not every substrate has biases that survive between ticks.
   clearBiases?: () => void;

@@ -10,6 +10,7 @@ const THEME_KEY = "el-coso-theme";
 const UI_SCALE_KEY = "el-coso-ui-scale";
 const FONT_SCALE_KEY = "el-coso-font-scale";
 const FPS_CAP_KEY = "el-coso-fps-cap";
+const PANELS_KEY = "el-coso-panels";
 
 export const UI_SCALES = [0.9, 1.0, 1.1, 1.25] as const;
 export type UiScale = (typeof UI_SCALES)[number];
@@ -93,32 +94,82 @@ export const ALL_PANELS: PanelId[] = [
   "timeline",
 ];
 
+// Panels open by default when a substrate doesn't declare `defaultOpen`. The
+// history timeline + commit inspector start closed so first paint stays focused
+// on the substrate itself; the user reopens them and that choice persists
+// (see PanelPrefs below). Toolbar + rules stay open by default.
+export const DEFAULT_OPEN_PANELS: readonly PanelId[] = ["toolbar", "rules"];
+
 // Per-substrate chrome configuration, declared substrate-side on `meta` and
 // projected into the SubstrateEntry. Two positive-statement bags (the
 // lens-features-bag convention): `available` = which panels the substrate
 // offers at all (omitted ⇒ all four); `defaultOpen` = which of those are open
-// at boot / on a substrate switch (omitted ⇒ all available). Runtime toggles
-// are the user's; switching substrate re-applies these defaults.
+// at boot / on a substrate switch (omitted ⇒ DEFAULT_OPEN_PANELS). The user's
+// own toggles persist and overlay these (see resolveChromePanels).
 export type ChromePanelsConfig = {
   available?: readonly PanelId[];
   defaultOpen?: readonly PanelId[];
 };
 
-// Resolve a config into the two boolean records the chrome reads. An
-// unavailable panel is never open, whatever `defaultOpen` lists.
-export function resolveChromePanels(config?: ChromePanelsConfig): {
+// The user's persisted panel toggles, keyed by panel — only panels the user
+// has actually opened/closed appear here. Overlaid on the substrate defaults
+// so untouched panels still follow substrate intent, but a panel the user
+// touched sticks across reloads AND substrate switches.
+export type PanelPrefs = Partial<Record<PanelId, boolean>>;
+
+function readStoredPanelPrefs(): PanelPrefs {
+  if (typeof window === "undefined") return {};
+  const raw = window.localStorage.getItem(PANELS_KEY);
+  if (!raw) return {};
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    // Corrupted localStorage is the recognized gate-it-out case — warn so it
+    // isn't a fully silent no-op, then fall back to defaults.
+    console.warn(`[store] ignoring corrupt ${PANELS_KEY} in localStorage`);
+    return {};
+  }
+  if (typeof parsed !== "object" || parsed === null) return {};
+  const out: PanelPrefs = {};
+  for (const id of ALL_PANELS) {
+    const v = (parsed as Record<string, unknown>)[id];
+    if (typeof v === "boolean") out[id] = v;
+  }
+  return out;
+}
+
+function writeStoredPanelPref(id: PanelId, open: boolean): void {
+  if (typeof window === "undefined") return;
+  const prefs = readStoredPanelPrefs();
+  prefs[id] = open;
+  window.localStorage.setItem(PANELS_KEY, JSON.stringify(prefs));
+}
+
+// Resolve a config into the two boolean records the chrome reads. Open state =
+// substrate defaults, with the user's persisted toggles (`stored`) overlaid.
+// An unavailable panel is never open, whatever `defaultOpen` or `stored` lists.
+export function resolveChromePanels(
+  config?: ChromePanelsConfig,
+  stored: PanelPrefs = {},
+): {
   panels: PanelsState;
   availablePanels: PanelsState;
 } {
   const available = config?.available ?? ALL_PANELS;
-  const open = (config?.defaultOpen ?? available).filter((id) =>
-    available.includes(id),
+  const isAvailable = (id: PanelId) => available.includes(id);
+  const defaultOpen = (config?.defaultOpen ?? DEFAULT_OPEN_PANELS).filter(
+    isAvailable,
   );
   const record = (members: readonly PanelId[]): PanelsState =>
     Object.fromEntries(
       ALL_PANELS.map((id) => [id, members.includes(id)]),
     ) as PanelsState;
-  return { panels: record(open), availablePanels: record(available) };
+  const panels = record(defaultOpen);
+  for (const id of ALL_PANELS) {
+    if (stored[id] !== undefined && isAvailable(id)) panels[id] = stored[id]!;
+  }
+  return { panels, availablePanels: record(available) };
 }
 
 export type CompareMode = "split" | "wipe" | "onion";
@@ -232,9 +283,14 @@ export type AppState = {
   kitchenSinkOpen: boolean;
   helpOpen: boolean;
   settingsOpen: boolean;
+  // Substrate gallery — the "browse all" modal opened from the toolbar's
+  // compact (favorites-only) substrate picker.
+  galleryOpen: boolean;
   toggleKitchenSink: () => void;
   toggleHelp: () => void;
   toggleSettings: () => void;
+  openGallery: () => void;
+  closeGallery: () => void;
 
   uiScale: UiScale;
   setUiScale: (s: UiScale) => void;
@@ -282,13 +338,19 @@ export const useStore = create<AppState>((set, get) => ({
     set({ theme: next });
   },
 
-  panels: { toolbar: true, inspector: true, rules: true, timeline: true },
-  availablePanels: { toolbar: true, inspector: true, rules: true, timeline: true },
-  setPanel: (id, open) =>
-    set((s) => ({ panels: { ...s.panels, [id]: open } })),
+  ...resolveChromePanels(undefined, readStoredPanelPrefs()),
+  setPanel: (id, open) => {
+    writeStoredPanelPref(id, open);
+    set((s) => ({ panels: { ...s.panels, [id]: open } }));
+  },
   togglePanel: (id) =>
-    set((s) => ({ panels: { ...s.panels, [id]: !s.panels[id] } })),
-  applyChromePanels: (config) => set(resolveChromePanels(config)),
+    set((s) => {
+      const open = !s.panels[id];
+      writeStoredPanelPref(id, open);
+      return { panels: { ...s.panels, [id]: open } };
+    }),
+  applyChromePanels: (config) =>
+    set(resolveChromePanels(config, readStoredPanelPrefs())),
 
   playing: false,
   playheadTick: 0,
@@ -409,9 +471,12 @@ export const useStore = create<AppState>((set, get) => ({
   kitchenSinkOpen: false,
   helpOpen: false,
   settingsOpen: false,
+  galleryOpen: false,
   toggleKitchenSink: () => set((s) => ({ kitchenSinkOpen: !s.kitchenSinkOpen })),
   toggleHelp: () => set((s) => ({ helpOpen: !s.helpOpen })),
   toggleSettings: () => set((s) => ({ settingsOpen: !s.settingsOpen })),
+  openGallery: () => set({ galleryOpen: true }),
+  closeGallery: () => set({ galleryOpen: false }),
 
   uiScale: readStoredUiScale(),
   setUiScale: (scale) => {

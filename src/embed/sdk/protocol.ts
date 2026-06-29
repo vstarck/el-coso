@@ -52,7 +52,17 @@ export type UpMessage =
       tunables: TunableManifest[];
       commands: EmbedCommandSpec[];
     }
-  | { kind: "state"; playing: boolean; tick?: number }
+  // Live host-relevant state, pushed whenever play-state OR any declared tunable
+  // changes (incl. from inside the substrate — a console toggle, player takeover).
+  // `tunables` is a full snapshot keyed by dotted path; the host APPLIES it to its
+  // controls (no diffing, no re-query). Sent once right after `mounted` for the
+  // initial values, then on every change.
+  | {
+      kind: "state";
+      playing: boolean;
+      tick?: number;
+      tunables: Record<string, TunableValue>;
+    }
   | { kind: "error"; message: string; requestId?: string };
 
 export type Direction = "down" | "up";

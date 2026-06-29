@@ -6,6 +6,7 @@ import { RulesRail } from "./components/chrome/RulesRail";
 import { PanelStub } from "./components/chrome/PanelStub";
 import { CompareOverlay } from "./components/chrome/CompareOverlay";
 import { PreviewCard } from "./components/chrome/PreviewCard";
+import { SubstrateGallery } from "./components/chrome/SubstrateGallery";
 import { HelpPanel } from "./components/overlays/HelpPanel";
 import { KitchenSink } from "./components/overlays/KitchenSink";
 import { SettingsPanel } from "./components/overlays/SettingsPanel";
@@ -135,6 +136,7 @@ export default function App() {
 
       <PreviewCard />
       <CompareOverlay />
+      <SubstrateGallery />
       <HelpPanel />
       <SettingsPanel />
       <KitchenSink />

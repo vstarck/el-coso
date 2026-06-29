@@ -7,7 +7,7 @@ import {
   type TfpsConfig,
   type TfpsInputs,
 } from "@/substrates/tfps";
-import { castRay, castColumns } from "@/substrates/tfps/lens/raycast";
+import { castRay, castColumns } from "@/lib/raycast";
 import { allocSubstrate, swap, tick } from "@/substrates/tfps";
 import { botInputs } from "@/substrates/tfps/lens/bot";
 import { makeViewSurface, paintMinimap } from "@/substrates/tfps/lens/render";

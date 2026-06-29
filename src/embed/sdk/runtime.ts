@@ -16,7 +16,7 @@
  */
 
 import type { EmbedConfig, EmbedHandle } from "@/embed/mount-substrate";
-import type { LensTunable } from "@/lenses/types";
+import type { LensTunable, TunableValue } from "@/lenses/types";
 import {
   isEnvelope,
   makeEnvelope,
@@ -65,6 +65,7 @@ export function startEmbedGuest(): void {
   let pendingConfig: EmbedConfig | null = null;
   const queued: DownMessage[] = []; // control messages that arrived before mount
   let lastPlaying = false;
+  let tunablePaths: string[][] = []; // declared paths to snapshot (from the manifest)
 
   function post(msg: UpMessage): void {
     parent.postMessage(makeEnvelope("up", msg, token), parentOrigin ?? "*");
@@ -76,13 +77,29 @@ export function startEmbedGuest(): void {
     post(requestId === undefined ? { kind: "error", message } : { kind: "error", message, requestId });
   }
 
+  // Read the current value of every declared tunable into a dotted-path map.
+  function snapshotTunables(h: EmbedHandle): Record<string, TunableValue> {
+    const out: Record<string, TunableValue> = {};
+    for (const path of tunablePaths) {
+      const v = h.getTunable(path);
+      if (v !== undefined) out[path.join(".")] = v;
+    }
+    return out;
+  }
+
+  // Push the full host-relevant snapshot (play-state + every tunable value). The
+  // host applies it to its controls idempotently — no diffing, no re-query.
+  function postState(): void {
+    if (!handle) return;
+    lastPlaying = handle.isPlaying();
+    post({ kind: "state", playing: lastPlaying, tunables: snapshotTunables(handle) });
+  }
+
+  // The play-state poll (the host loop has no play subscription); tunables push
+  // instantly via `subscribeTunables`, so this only watches `playing`.
   function reportStateIfChanged(): void {
     if (!handle) return;
-    const playing = handle.isPlaying();
-    if (playing !== lastPlaying) {
-      lastPlaying = playing;
-      post({ kind: "state", playing });
-    }
+    if (handle.isPlaying() !== lastPlaying) postState();
   }
 
   function tryMount(): void {
@@ -99,6 +116,7 @@ export function startEmbedGuest(): void {
       return;
     }
     const d = handle.describe();
+    tunablePaths = d.tunables.map((t) => t.path);
     lastPlaying = handle.isPlaying();
     post({
       kind: "mounted",
@@ -108,6 +126,10 @@ export function startEmbedGuest(): void {
       tunables: tunableManifest(d.tunables),
       commands: d.commands.slice(),
     });
+    postState(); // initial values, right after the manifest
+    // Push instantly when the substrate changes a tunable itself (console toggle,
+    // player takeover, a console `set`); poll only for play-state.
+    handle.subscribeTunables(postState);
     // Drain control messages that arrived before mount, then start state polling.
     const pending = queued.splice(0, queued.length);
     for (const m of pending) dispatch(m);

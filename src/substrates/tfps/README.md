@@ -19,7 +19,7 @@ walkthrough — no combat.
   a population), so it keyframes trivially. The world (a grid of wall kinds) is
   immutable `Config`. `tick` rotates then translates with **per-axis
   wall-sliding collision**. No RNG — locomotion is fully deterministic.
-- **Raycaster** (`lens/raycast.ts`) — textbook grid DDA, one ray per screen
+- **Raycaster** (`@/lib/raycast`) — textbook grid DDA, one ray per screen
   column, reporting **perpendicular** distance (no edge fisheye), the face side
   (N/S vs E/W), and the wall kind. Pure and headless-testable.
 - **Render** (`lens/render.ts`) — columns → a styled ASCII cell buffer

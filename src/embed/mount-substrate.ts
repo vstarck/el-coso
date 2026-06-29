@@ -96,6 +96,10 @@ export type EmbedHandle = {
   getTunable(path: string[]): TunableValue | undefined;
   /** Write a lens/config tunable by dotted path (spec/25). */
   setTunable(path: string[], value: TunableValue): void;
+  /** Subscribe to tunable changes (including ones the substrate makes itself —
+   *  a console toggle, player takeover). Fires with no args; re-read via
+   *  `getTunable`. The SDK guest uses this to push live state to the host. */
+  subscribeTunables(listener: () => void): () => void;
   /** Dispatch a substrate-specific named command (spec/25). THROWS if the lens
    *  declares no command surface or rejects the name — never a silent no-op, so
    *  the caller / SDK can surface it. */
@@ -208,6 +212,7 @@ export function mountSubstrate(
     setLoop,
     getTunable: (path) => mounted.tree.root.getTunable(path),
     setTunable: (path, value) => mounted.tree.root.setTunable(path, value),
+    subscribeTunables: (listener) => mounted.tree.root.subscribeTunables(listener),
     command: (name, ...args) => {
       const dispatch = mounted.tree.root.command;
       if (!dispatch) {

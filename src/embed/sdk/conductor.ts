@@ -59,6 +59,10 @@ export type EmbedRemote = {
   command(name: string, ...args: unknown[]): void;
   /** Last known play state (from `state`/`mounted` events; false until mounted). */
   isPlaying(): boolean;
+  /** Last known tunable values, keyed by dotted path (from `state`; `{}` until
+   *  the first state arrives). The live counterpart to `describe()`'s static
+   *  manifest — render a control from the manifest, read its value from here. */
+  tunables(): Record<string, TunableValue>;
   /** Discovery manifest, or null until the guest has mounted. */
   describe(): { lens: string; tunables: TunableManifest[]; commands: EmbedCommandSpec[] } | null;
   on(event: EmbedEvent, cb: (detail: unknown) => void): () => void;
@@ -117,6 +121,7 @@ export function createConductor(opts: ConductorOptions): Conductor {
     _ready: boolean;
     _outbox: DownMessage[];
     _lastPlaying: boolean;
+    _lastTunables: Record<string, TunableValue>;
     _manifest: { lens: string; tunables: TunableManifest[]; commands: EmbedCommandSpec[] } | null;
     _listeners: Record<EmbedEvent, Set<(d: unknown) => void>>;
     _receive(msg: UpMessage): void;
@@ -166,6 +171,7 @@ export function createConductor(opts: ConductorOptions): Conductor {
       _ready: false,
       _outbox: [],
       _lastPlaying: false,
+      _lastTunables: {},
       _manifest: null,
       _listeners: listeners,
       play: () => send({ kind: "play" }),
@@ -177,6 +183,7 @@ export function createConductor(opts: ConductorOptions): Conductor {
         send({ kind: "set_tunable", path: Array.isArray(path) ? path : [path], value }),
       command: (name, ...args) => send({ kind: "command", name, args }),
       isPlaying: () => remote._lastPlaying,
+      tunables: () => remote._lastTunables,
       describe: () => remote._manifest,
       on: (event, cb) => {
         listeners[event].add(cb);
@@ -210,7 +217,8 @@ export function createConductor(opts: ConductorOptions): Conductor {
           }
           case "state":
             remote._lastPlaying = msg.playing;
-            emit("state", { playing: msg.playing, tick: msg.tick });
+            remote._lastTunables = msg.tunables;
+            emit("state", { playing: msg.playing, tick: msg.tick, tunables: msg.tunables });
             return;
           case "error":
             emit("error", { message: msg.message, requestId: msg.requestId });

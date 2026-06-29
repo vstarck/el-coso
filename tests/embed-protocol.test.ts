@@ -14,7 +14,7 @@ test("makeEnvelope tags version+dir and omits token when absent", () => {
 
 test("isEnvelope accepts our well-formed messages", () => {
   expect(isEnvelope(makeEnvelope("down", { kind: "play" }))).toBe(true);
-  expect(isEnvelope(makeEnvelope("up", { kind: "state", playing: true }, "t"))).toBe(true);
+  expect(isEnvelope(makeEnvelope("up", { kind: "state", playing: true, tunables: {} }, "t"))).toBe(true);
   expect(
     isEnvelope(makeEnvelope("down", { kind: "set_tunable", path: ["theme"], value: "amber" })),
   ).toBe(true);

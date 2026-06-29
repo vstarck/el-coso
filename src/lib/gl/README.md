@@ -41,6 +41,13 @@ samples every cell); moving entities and markers draw as
 `InstancedQuads` with a shared point-sprite shader. A `Framebuffer` +
 `FullScreenPass` layers fade / post-process passes on top.
 
+The simplest case needs no textures or geometry at all: a lens whose image
+is a **pure per-pixel function of a few uniforms** is just a `createShader`
++ `createFullScreenPass`, with the math in the fragment shader. `julia`'s
+`Escape · GL` lens ([`src/substrates/julia/lens/painter.ts`](../../substrates/julia/lens/painter.ts))
+is the worked reference — an escape-time fractal as one full-screen pass,
+sharing its mount with a Canvas 2D twin so you can A/B CPU vs GPU.
+
 ## Still longhand (extract when needed)
 
 - A `TextureQuad` primitive (single projected textured quad) —

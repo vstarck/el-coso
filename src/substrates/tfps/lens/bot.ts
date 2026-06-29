@@ -8,7 +8,7 @@
  * directions ⇒ euclidean wall distance), so it "sees" exactly what's drawn.
  */
 
-import { castRay } from "./raycast";
+import { castRay } from "@/lib/raycast";
 import type { TfpsConfig } from "../engine/config";
 import type { SubstrateState, TfpsInputs } from "../engine/types";
 import { NO_INPUT } from "../engine/types";

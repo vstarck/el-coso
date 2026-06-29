@@ -12,7 +12,7 @@
 
 import { makeSurface, renderToCanvas, type Surface } from "@/lib/ascii";
 import type { TfpsConfig } from "../engine/config";
-import type { Column } from "./raycast";
+import type { Column } from "@/lib/raycast";
 import type { TfpsTheme } from "./theme";
 
 // Distance-faded wall glyphs, densest (nearest) first. Pure ASCII.

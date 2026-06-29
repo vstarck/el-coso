@@ -130,6 +130,27 @@ working references: `conway` is the smallest (zero input, one canvas lens);
 `tts` is a `dom` lens that renders the state as live JSON; `blockoide`
 composes a deck of layers into one view.
 
+### Command console (a guake terminal over any lens)
+
+Any lens can grow a **drop-down command console** — a quake/guake-style
+terminal that slides over the world on **backtick**, with a scrollback log,
+command history, and Tab-completion. Wrap the lens:
+
+```ts
+import { withConsole } from "@/lenses/withConsole";
+export const myLens = withConsole(baseLens);
+```
+
+It's a thin decorator (no chrome or contract change), so it works the same in
+the app, embeds, and bare.html. The console is just a text front-end to the
+**same `commands` / `command()` surface the SDK uses** (below): the lens
+declares `commands: EmbedCommandSpec[]` (for the `help` list + completion) and
+handles `command(name, args)` (args are type-coerced from the typed line). So a
+substrate "implements the console" exactly the way it implements embed commands
+— and a command can be real input into the world, not just a toggle. `conway`
+(`spawn glider`, `clear`, `random`, `step`) and `julia` (`c`, `iters`, `zoom`,
+`mode`) are the worked references.
+
 ---
 
 ## Scaffold a new substrate
@@ -156,94 +177,27 @@ Non-interactive:
 npm run new-substrate -- <name> --from answers.json
 ```
 
+### How it shows up — the gallery card
+
+The substrate picker is a compact list of favorites plus a **"more…"** entry
+that opens a gallery modal. Your substrate's card is built from optional fields
+on `meta` (all of which default gracefully):
+
+| `meta` field | Card surface |
+|---|---|
+| `description` | the one-line blurb under the title |
+| `thumbnail`   | a square image — `import` it from the package's `assets/` (Vite hashes it). Omitted ⇒ a styled accent placeholder |
+| `tags`        | extra tag chips, appended after the auto-derived ones (render target · turn-based/real-time · self-playing) |
+| `galleryVariants` | extra cards for the *same* substrate pinned to a puzzle/lens (e.g. `conway · glider gun`) |
+
+Favorites (and picker order) are the `FEATURED` list in
+[`src/app/substrates.ts`](../src/app/substrates.ts); every other substrate is
+still reachable through the gallery.
+
 ---
 
-## Export an embed
+## Embedding & the SDK
 
-```bash
-npm run export -- <substrate-id>
-```
-
-This bundles a substrate into a **self-contained, React-free single file** —
-`dist-embed/<id>/<id>.html` (plus a reusable `<id>-embed.js`) — that mounts the
-world with no chrome and no framework, suitable for dropping into any page.
-
-The whole run is setupable from the command line:
-
-```bash
-npm run export -- tts \
-  --puzzle=classic --lens=tts-json --seed=7 --speed=2x \
-  --set theme=boomer-blue
-```
-
-| Flag | Sets |
-|---|---|
-| `--puzzle=<id>` | which puzzle to load |
-| `--lens=<id>`   | which lens to mount |
-| `--seed=<n>`    | the RNG seed |
-| `--speed=<id>`  | a speed preset |
-| `--set k=v`     | any lens or config tunable (repeatable) |
-| `--no-autoplay` | mount paused instead of self-running |
-| `--loop`        | restart at the end of the run (substrates that honour it) |
-| `--touch-action=<v>` | touch policy: `none` (full capture) / `pan-y` (let vertical scroll through) |
-| `--title=<text>` | the page `<title>` |
-| `--precomputed=<file>` | bake a JSON blob as the default `config.precomputed` |
-| `--js-only`     | emit only the `.js` bundle, skip the standalone `.html` |
-
-Every run also (re)builds two substrate-agnostic files at the `dist-embed/`
-root: `embed.html` (the SDK guest runtime) and `sdk.js` (the host bundle,
-below). `--skip-guest` skips them; `--skip-typecheck` skips the `tsc` gate.
-
-Export works for any substrate — lenses reach their host through the injected
-`host` handle rather than the app store (the "ask, don't reach in" discipline,
-now repo-wide and scaffolded by the wizard), so the bundle carries no React or
-store. `conway` and `tts` come out at a few kilobytes.
-
-## Drive many embeds — the SDK
-
-A self-contained `<id>.html` is enough to drop one world into a page. To mount
-**several** and control them from the host page, use the **Embed SDK**: one
-`createConductor` returns a `Conductor`, and each `conductor.embed(target, spec)`
-returns a per-embed handle.
-
-```js
-import { createConductor } from "./sdk.js";   // or window.ElCoso.createConductor
-
-const conductor = createConductor({
-  runtime: "/embeds/embed.html",               // the guest page
-  base: "/embeds/",                             // bundle base: ${base}<id>/<id>-embed.js
-  autoplay: { default: true, persist: "coso-autoplay" },
-});
-
-const tts = conductor.embed("#slot", { substrate: "tts", config: { speed: "2x" } });
-tts.pause();
-tts.setTunable("theme", "boomer-blue");
-tts.command("rewind", 5);                       // substrate-specific named command
-conductor.pauseAll();                           // global autoplay policy
-```
-
-Each handle also has `play` / `toggle` / `reset` / `setLoop`, an `on(event, cb)`
-for `ready` / `state` / `error`, and `describe()` — the discovery manifest
-`{ lens, tunables, commands }` so a host can build controls for whatever the
-substrate exposes. **Named commands** (`command(name, ...args)`) are the third
-control tier alongside the universal verbs and the tunable channel: a lens
-declares its own verbs (an autopilot toggle, a `rewind`) and the SDK forwards
-them. Host and guest talk over the `coso/v1` postMessage protocol (origin +
-token gated). The full host API is in `src/embed/sdk/`; a worked host page is
-`examples/portfolio.html`.
-
-## Preview & debug
-
-`npm run dev` serves the exports so you can try them as deployed:
-
-- **`/portfolio`** — the SDK Conductor demo (`examples/portfolio.html`).
-- **`/embeds/*`** — the whole `dist-embed/` tree (`sdk.js`, `embed.html`,
-  `<id>/<id>-embed.js`), served verbatim — no HMR injection, so an embed runs
-  exactly as it will on a real page.
-- **`/embed/<id>`** — a single standalone embed.
-
-Jank in an embed (or the app)? Append **`?profile`** to the URL to turn on the
-host loop's frame-cost profiler: it warns in the console the moment a frame's
-`tick` or `render` phase blows the budget, naming the phase and substrate.
-`?profile=8` sets the budget in ms. Off by default, so it costs nothing in
-production.
+Exporting a substrate as a self-contained widget, driving many embeds with the
+**Embed SDK**, keeping host controls in sync, and the `?profile` / `?fps`
+preview switches all live in their own guide: [`docs/embedding.md`](embedding.md).
