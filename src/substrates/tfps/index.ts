@@ -21,6 +21,8 @@ export const puzzles: unknown[] = [e1m1];
 export const meta = {
   id: "tfps",
   name: "tfps",
+  description:
+    "A terminal FPS — an ASCII raycaster with a self-playing patrol bot, drawn in colored glyphs.",
   defaultPuzzle: "e1m1",
   keyframePeriod: 120,
 } as const;

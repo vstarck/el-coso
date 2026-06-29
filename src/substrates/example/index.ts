@@ -20,6 +20,8 @@ export const puzzles: unknown[] = [example0];
 export const meta = {
   id: "example",
   name: "Example",
+  description:
+    "The executable template for authoring a new substrate — a no-op tick to copy from.",
   defaultPuzzle: "example-0",
   keyframePeriod: 100,
 } as const;

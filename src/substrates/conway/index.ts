@@ -23,6 +23,8 @@ export const puzzles: unknown[] = [
 export const meta = {
   id: "conway",
   name: "Conway",
+  description:
+    "Conway's Game of Life — a zero-input cellular automaton; you only seed it, then watch.",
   defaultPuzzle: "r-pentomino-large",
   keyframePeriod: 100,
 } as const;

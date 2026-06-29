@@ -38,6 +38,8 @@ export const puzzles: unknown[] = [sprint, endless, pillar];
 export const meta = {
   id: "blockoide",
   name: "Blockoide",
+  description:
+    "Blockout — 3D Tetris: drop tetracubes into a pit and clear full layers.",
   defaultPuzzle: "sprint",
   keyframePeriod: KEYFRAME_PERIOD,
 } as const;

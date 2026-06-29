@@ -21,6 +21,8 @@ export const puzzles: unknown[] = [openArena, tightArena, swarm];
 export const meta = {
   id: "tron",
   name: "Tron",
+  description:
+    "Tron light-cycles — leave a deadly trail and outlast the AI riders.",
   defaultPuzzle: "open-arena",
   keyframePeriod: 60,
 } as const;

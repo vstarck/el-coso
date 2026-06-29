@@ -20,6 +20,8 @@ export const puzzles: unknown[] = [classic, small];
 export const meta = {
   id: "tts",
   name: "tts",
+  description:
+    "The simplest possible Tetris, dressed as a fish-shell terminal session.",
   defaultPuzzle: "classic",
   keyframePeriod: 100,
 } as const;

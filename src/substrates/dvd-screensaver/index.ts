@@ -21,6 +21,8 @@ export const puzzles: unknown[] = [classicDvd, gravityWell];
 export const meta = {
   id: "dvd-screensaver",
   name: "DVD",
+  description:
+    "A bouncing DVD logo — one autonomous particle, read through stacked velocity / acceleration overlays.",
   defaultPuzzle: "classic-dvd",
   keyframePeriod: 100,
 } as const;

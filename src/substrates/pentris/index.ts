@@ -24,6 +24,8 @@ export const puzzles: unknown[] = [pentris0, pentrisSprint];
 export const meta = {
   id: "pentris",
   name: "Pentris",
+  description:
+    "A falling-block stacker on the twelve pentominoes, with a fork-anywhere history workbench.",
   defaultPuzzle: "pentris-0",
   keyframePeriod: 100,
 } as const;
