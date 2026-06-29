@@ -327,7 +327,10 @@ export function Toolbar({ onClose }: { onClose?: () => void }) {
       {/* Readouts — universal (tick/fps/seed). */}
       <div className="flex items-center gap-3 px-2 font-mono text-[length:var(--text-sm)] text-fg-muted">
         <Readout label="tick" value={String(playheadTick).padStart(4, "0")} />
-        <Readout label="fps" value={fps.toFixed(0)} />
+        <Readout label="fps" value={String(Math.round(fps.instant))} />
+        <Readout label="avg" value={String(Math.round(fps.averageTotal))} />
+        <Readout label="10s" value={String(Math.round(fps.average10s))} />
+        <Readout label="min" value={String(Math.round(fps.min10s))} />
         <Readout label="seed" value={formatSeed(session.history.rng_seed_initial)} />
       </div>
 

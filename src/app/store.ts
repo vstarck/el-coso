@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { HEAD_COMMIT_ID, headParams } from "./fixtures/tree";
 import type { Params } from "@/lib/types";
+import { ZERO_FPS, type FpsStats } from "@/lib/lens-host/fps-stats";
 import type { DrillStep } from "./lib/scenes/drill-in";
 
 type Theme = "dark" | "light";
@@ -139,13 +140,13 @@ export type AppState = {
   // Spec §1 — transport
   playing: boolean;
   playheadTick: number;
-  fps: number;
+  fps: FpsStats;
   speedId: string;
   setPlayheadTick: (t: number) => void;
   setPlaying: (playing: boolean) => void;
   togglePlaying: () => void;
   setSpeedId: (id: string) => void;
-  setFps: (fps: number) => void;
+  setFps: (stats: FpsStats) => void;
 
   // Bumped by the lens when history structure changes (commit emitted,
   // branch created/deleted, truncate). Components reading from
@@ -291,13 +292,13 @@ export const useStore = create<AppState>((set, get) => ({
 
   playing: false,
   playheadTick: 0,
-  fps: 0,
+  fps: ZERO_FPS,
   speedId: "turn",
   setPlayheadTick: (t) => set({ playheadTick: t }),
   setPlaying: (playing) => set({ playing }),
   togglePlaying: () => set((s) => ({ playing: !s.playing })),
   setSpeedId: (id) => set({ speedId: id }),
-  setFps: (fps) => set({ fps }),
+  setFps: (stats) => set({ fps: stats }),
 
   historyVersion: 0,
   bumpHistoryVersion: () =>

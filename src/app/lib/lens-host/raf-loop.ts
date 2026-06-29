@@ -34,7 +34,7 @@ export function attachRafLoop(opts: RafLoopOpts): RafLoopHandle {
   return attachRafLoopCore({
     ...loop,
     fpsCap: () => useStore.getState().fpsCap,
-    reportFps: (fps) => useStore.getState().setFps(fps),
+    reportFps: (stats) => useStore.getState().setFps(stats),
     ...(profiler ? { profile: profiler.profile } : {}),
   });
 }

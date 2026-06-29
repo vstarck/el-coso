@@ -22,6 +22,8 @@ import {
 import type { History, TickedState } from "@/history";
 import { attachRafLoopCore } from "./raf-loop-core";
 import { type FrameProfiler, frameProfilerFromEnv } from "./frame-profiler";
+import { fpsHudEnabledFromEnv, makeFpsHud, type FpsHud } from "./fps-hud";
+import type { FpsStats } from "./fps-stats";
 import { makeLensHost } from "./host";
 import { mountLensTree, type LensTree } from "./mount-tree";
 
@@ -65,8 +67,10 @@ export type MountHostOptions<State extends TickedState> = {
   /** Start an AUTOPLAY lens running on mount (the app's behavior). Default
    *  true. */
   autoStartIfAutoplay?: boolean;
-  /** Optional rolling-fps sink (uncapped render rate either way). */
-  reportFps?: (fps: number) => void;
+  /** Optional FPS-stats sink (four-up instant/avg/10s/min, sampled ~2Hz). The
+   *  built-in `?fps` HUD is wired in addition to this, so an exported embed
+   *  shows the counter in-place without the consumer doing anything. */
+  reportFps?: (stats: FpsStats) => void;
   /** Label for the dev frame-profiler (the substrate/lens id), surfaced in
    *  over-budget warnings. The profiler is auto-wired from the runtime gate
    *  (`?profile` / `__COSO_PROFILE__`) and is off — zero loop overhead — unless
@@ -218,6 +222,9 @@ export function mountHost<State extends TickedState, Config, Input, CommitPayloa
     in_view && (typeof document === "undefined" || !document.hidden);
 
   const profiler = opts.profiler ?? frameProfilerFromEnv(opts.profileLabel);
+  // Built-in `?fps` HUD — paints in `outer` (the embed frame) on demand. The
+  // app chrome reads the same stats via its toolbar, so it never gates this on.
+  const fpsHud: FpsHud | null = fpsHudEnabledFromEnv() ? makeFpsHud(outer) : null;
   const loop = attachRafLoopCore({
     render: () => {
       const state = history.substrate.read;
@@ -227,7 +234,10 @@ export function mountHost<State extends TickedState, Config, Input, CommitPayloa
     ...(tree.root.speedMult ? { speedMult: tree.root.speedMult } : {}),
     isPlaying: () => host.isPlaying(),
     isActive,
-    ...(opts.reportFps ? { reportFps: opts.reportFps } : {}),
+    reportFps: (stats: FpsStats) => {
+      opts.reportFps?.(stats);
+      fpsHud?.report(stats);
+    },
     ...(profiler ? { profile: profiler.profile } : {}),
   });
 
@@ -243,6 +253,7 @@ export function mountHost<State extends TickedState, Config, Input, CommitPayloa
     unmount: () => {
       loop.stop();
       observer?.disconnect();
+      fpsHud?.destroy();
       tree.unmount();
       if (outer.parentNode === container) container.removeChild(outer);
       cleanup();

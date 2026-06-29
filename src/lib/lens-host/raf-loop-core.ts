@@ -33,9 +33,13 @@
  * rendering while unfocused (so resize stays responsive on the app chrome).
  *
  * `fpsCap()` gates how often we *render* (0 = uncapped); `reportFps` receives a
- * rolling readout sampled every ~500ms (and 0 on stop). Both default to inert,
- * so a host that doesn't care omits them.
+ * four-up `FpsStats` (instant / averageTotal / average10s / min10s) sampled
+ * every ~500ms (and zeroed on stop). Both default to inert, so a host that
+ * doesn't care omits them. The stats accumulator is host-agnostic
+ * (`./fps-stats`) so the chrome and the export embeds read identical numbers.
  */
+
+import { makeFpsStats, ZERO_FPS, type FpsStats } from "./fps-stats";
 
 const FPS_SAMPLE_MS = 500;
 // Tolerance below the cap interval so a 60Hz cap on a 60Hz monitor doesn't
@@ -67,9 +71,9 @@ export type RafLoopCoreOpts = {
   isActive?: () => boolean;
   /** Render-rate ceiling in fps; 0 = uncapped (sync to monitor). Default 0. */
   fpsCap?: () => number;
-  /** Rolling FPS readout sink, sampled ~every 500ms (and 0 on stop). Default
-   * inert. */
-  reportFps?: (fps: number) => void;
+  /** FPS readout sink — a four-up `FpsStats` sampled ~every 500ms (and zeroed
+   * on stop). Default inert. */
+  reportFps?: (stats: FpsStats) => void;
   /** Dev-only per-phase frame-cost sink. When omitted the loop adds zero
    * overhead (no extra `performance.now()` calls). When set, each frame emits a
    * `tick`/`render`/`frame` timing — the cross-browser signal `reportFps` can't
@@ -112,7 +116,7 @@ export function attachRafLoopCore(opts: RafLoopCoreOpts): RafLoopHandle {
 
   let stopped = false;
   let tick_accumulator = 0;
-  let frames_since_sample = 0;
+  const fpsStats = makeFpsStats();
   let last_sample_time = performance.now();
   let last_frame_time = performance.now();
 
@@ -142,6 +146,8 @@ export function attachRafLoopCore(opts: RafLoopCoreOpts): RafLoopHandle {
     }
     const dt_ms = Math.min(now - last_frame_time, MAX_FRAME_DT_MS);
     last_frame_time = now;
+    // Only executed (non-cap-skipped) frames reach here — feed the rate stats.
+    fpsStats.sample(dt_ms);
 
     const active = isActive();
     if (tick !== undefined && active && isPlaying()) {
@@ -165,11 +171,8 @@ export function attachRafLoopCore(opts: RafLoopCoreOpts): RafLoopHandle {
     }
     if (profile) profile({ phase: "frame", ms: performance.now() - now });
 
-    frames_since_sample += 1;
-    const elapsed = now - last_sample_time;
-    if (elapsed >= FPS_SAMPLE_MS) {
-      reportFps((frames_since_sample * 1000) / elapsed);
-      frames_since_sample = 0;
+    if (now - last_sample_time >= FPS_SAMPLE_MS) {
+      reportFps(fpsStats.read());
       last_sample_time = now;
     }
   }
@@ -183,7 +186,7 @@ export function attachRafLoopCore(opts: RafLoopCoreOpts): RafLoopHandle {
         window.removeEventListener("blur", onFocusChange);
         document.removeEventListener("visibilitychange", onFocusChange);
       }
-      reportFps(0);
+      reportFps(ZERO_FPS);
     },
   };
 }
