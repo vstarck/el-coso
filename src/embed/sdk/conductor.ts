@@ -247,7 +247,13 @@ export function createConductor(opts: ConductorOptions): Conductor {
     el.src = url.toString();
     el.title = spec.title ?? spec.substrate;
     el.loading = "lazy";
-    el.setAttribute("sandbox", "allow-scripts allow-same-origin");
+    // allow-pointer-lock: a sandboxed iframe blocks pointer lock unless the token
+    // is present, so first-person substrates (nm5 mouselook) can't capture the
+    // mouse without it. Harmless for substrates that never request a lock.
+    el.setAttribute("sandbox", "allow-scripts allow-same-origin allow-pointer-lock");
+    // Permissions-Policy grant for pointer lock (belt-and-braces with the sandbox
+    // token; needed for cross-origin embeds where the default `self` won't cover it).
+    el.setAttribute("allow", "pointer-lock");
     el.style.border = "0";
     if (spec.width !== undefined) el.style.width = `${spec.width}px`;
     if (spec.height !== undefined) el.style.height = `${spec.height}px`;

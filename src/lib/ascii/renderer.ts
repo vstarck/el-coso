@@ -43,6 +43,12 @@ export type SurfaceRenderer = {
   setBackground(color: string): void;
   // Free any held resources (cache / GL context).
   dispose(): void;
+  // Optional backend diagnostics for a dev/console readout — named counters
+  // (cache sizes, etc.), keys backend-defined. Absent ⇒ no diagnostics offered
+  // (the text backend has no cache to report). The atlas reports its live strip-
+  // tile and colour-key cache sizes, so a console `profile` command can watch the
+  // colour-key set grow under shimmer (the unbounded-cache tell) or stay bounded.
+  stats?: () => Record<string, number>;
 };
 
 export type SurfaceRendererFactory = (

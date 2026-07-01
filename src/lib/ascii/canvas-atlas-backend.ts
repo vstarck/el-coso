@@ -82,6 +82,9 @@ export const makeCanvasAtlasRenderer: SurfaceRendererFactory = (canvas, opts) =>
   let lastCw = 0;
   let lastCh = 0;
   let lastRows = 0;
+  let lastBlitCalls = 0; // drawImage calls in the most recent render() — the
+  // fragmentation signal: a clean grid is ~one blit per column, per-cell noise
+  // shatters columns into one blit per cell (the atlas's cost driver).
 
   function colorKey(fg: string): string {
     let k = colorKeys.get(fg);
@@ -142,6 +145,7 @@ export const makeCanvasAtlasRenderer: SurfaceRendererFactory = (canvas, opts) =>
         lastCh = cellH;
         lastRows = s.h;
       }
+      let blitCalls = 0; // counted this frame, published to stats() at the end
 
       if (background !== undefined) {
         ctx.fillStyle = background;
@@ -202,6 +206,7 @@ export const makeCanvasAtlasRenderer: SurfaceRendererFactory = (canvas, opts) =>
           cellW,
           Math.ceil(h * ch), // dest
         );
+        blitCalls++;
       };
 
       for (let x = 0; x < s.w; x++) {
@@ -237,6 +242,7 @@ export const makeCanvasAtlasRenderer: SurfaceRendererFactory = (canvas, opts) =>
         }
         if (active) blitRun(x, y0, s.h - y0, rg, rf, rd, rb);
       }
+      lastBlitCalls = blitCalls;
     },
     resize(w: number, h: number): void {
       canvas.width = w;
@@ -245,7 +251,17 @@ export const makeCanvasAtlasRenderer: SurfaceRendererFactory = (canvas, opts) =>
     setBackground(color: string): void {
       background = color;
     },
+    // Live diagnostics for a console profiler. `blitCalls` = drawImage calls in
+    // the last frame (the fragmentation signal — ~one per column when clean, one
+    // per cell under per-cell noise). `strips` is the FIFO-capped tile cache;
+    // `colourKeys` is the raw-fg→quantized-key memo, which grows with DISTINCT fg
+    // strings (a per-tick shimmering palette defeats it → it climbs every frame;
+    // a bounded palette keeps it flat).
+    stats(): Record<string, number> {
+      return { blitCalls: lastBlitCalls, strips: strips.size, colourKeys: colorKeys.size };
+    },
     dispose(): void {
+      lastBlitCalls = 0;
       strips.clear();
       colorKeys.clear();
     },
