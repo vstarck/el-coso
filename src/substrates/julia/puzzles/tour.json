@@ -1,0 +1,7 @@
+{
+  "id": "tour",
+  "description": "c orbits the complex plane — the Julia set morphs continuously.",
+  "mode": "julia",
+  "orbit": { "center_re": 0, "center_im": 0, "radius": 0.7885, "speed": 0.01 },
+  "res": 256
+}

@@ -70,6 +70,9 @@ export type ConsoleOptions = {
   prompt?: string;
   // Lines printed the first time the console opens (e.g. a hint + `help`).
   banner?: string;
+  // Fixed panel height in px. Overrides the kit default (`height: 45%`, capped at
+  // 360px) when a substrate wants a taller drop-down (e.g. tts shows a banner).
+  panelHeightPx?: number;
   // Fired whenever the panel opens or closes (toggle key, Esc, or a programmatic
   // open/close). Lets a decorator expose the open/closed state — e.g. `withConsole`
   // surfaces it as a `console_open` tunable a host toolbar can read + drive.
@@ -213,6 +216,13 @@ export function mountConsole(opts: ConsoleOptions): ConsoleWidget {
   const panel = document.createElement("div");
   panel.className = c.panel;
   panel.setAttribute("role", "log");
+  // A substrate-requested fixed height beats the stylesheet's `height: 45%;
+  // max-height: 360px` (inline styles win), so the drop-down is exactly as tall
+  // as asked regardless of how tall the container readout is.
+  if (opts.panelHeightPx !== undefined) {
+    panel.style.height = `${opts.panelHeightPx}px`;
+    panel.style.maxHeight = "none";
+  }
   const log = document.createElement("div");
   log.className = c.log;
   const line = document.createElement("div");

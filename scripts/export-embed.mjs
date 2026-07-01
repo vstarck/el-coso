@@ -22,6 +22,8 @@
  *   --skip-guest         don't (re)build the SDK guest page (dist-embed/embed.html)
  *
  * Output: dist-embed/<id>/<id>.html  +  dist-embed/<id>/<id>-embed.js
+ *         (+ dist-embed/<id>/thumbnail.<ext> when the substrate has a gallery
+ *          thumbnail — copied as a sibling file, not inlined into the bundle)
  *         +  dist-embed/embed.html  +  dist-embed/sdk.js
  *         The per-substrate deliverables go in their own dist-embed/<id>/ dir
  *         (matches the Conductor's default bundle URL `${base}<id>/<id>-embed.js`).
@@ -84,6 +86,21 @@ function parseArgs(argv) {
 
 function listFiles(dir) {
   return fs.existsSync(dir) ? new Set(fs.readdirSync(dir)) : new Set();
+}
+
+// The substrate's gallery thumbnail is a card image the app chrome shows via
+// `meta.thumbnail`; the embed never renders it. vite.embed.config.ts strips the
+// base64 from the bundle and rewrites the import to a bare basename, so copy the
+// real file next to the bundle in dist-embed/<id>/ for that reference to resolve.
+function copyThumbnail(id, outDir) {
+  const assetsDir = path.join(ROOT, "src", "substrates", id, "assets");
+  if (!fs.existsSync(assetsDir)) return;
+  for (const f of fs.readdirSync(assetsDir)) {
+    if (/^thumbnail\.(webp|png|jpe?g|gif|avif)$/i.test(f)) {
+      fs.copyFileSync(path.join(assetsDir, f), path.join(outDir, f));
+      console.log(`  → dist-embed/${id}/${f} (gallery thumbnail, copied)`);
+    }
+  }
 }
 
 function writeGenericEntry(id, precomputed) {
@@ -302,6 +319,7 @@ function main() {
   fs.mkdirSync(OUT, { recursive: true });
   fs.renameSync(path.join(DIST, jsFile), path.join(OUT, jsFile));
   console.log(`  → dist-embed/${id}/${jsFile} (${(js.length / 1024).toFixed(1)} KB)`);
+  copyThumbnail(id, OUT);
 
   if (flags["js-only"]) return;
 

@@ -13,7 +13,7 @@ import {
   paletteColor,
   renderFractal,
   type RenderParams,
-} from "../src/substrates/julia/lens/render";
+} from "../src/lib/fractal";
 
 const cfg = (over: Record<string, unknown> = {}): JuliaConfig =>
   parseLevel({

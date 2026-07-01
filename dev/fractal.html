@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>fractal dive — dev viewer</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #05060a; overflow: hidden; }
+  /* The fractal canvas fills the viewport (the eventual scrollable background). */
+  #view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; image-rendering: auto; }
+  /* Control panel — mirrors what becomes lens tunables. */
+  #panel {
+    position: fixed; top: 14px; left: 14px; z-index: 10;
+    font: 12px/1.5 ui-monospace, Menlo, Consolas, monospace; color: #cfe;
+    background: rgba(8, 12, 18, 0.78); border: 1px solid #2a3550; border-radius: 10px;
+    padding: 12px 14px; backdrop-filter: blur(6px); width: 220px;
+  }
+  #panel h1 { font-size: 12px; margin: 0 0 8px; letter-spacing: 0.08em; color: #9fb; text-transform: uppercase; }
+  #panel label { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 6px 0; }
+  #panel select, #panel input[type="range"] { flex: 1; }
+  #panel .val { color: #fda; min-width: 56px; text-align: right; }
+  #panel .row { display: flex; gap: 8px; margin-top: 8px; }
+  #panel button { flex: 1; background: #16203a; color: #cfe; border: 1px solid #2a3550; border-radius: 6px; padding: 5px; cursor: pointer; font: inherit; }
+  #panel button:hover { background: #1d2a4a; }
+  #readout { margin-top: 8px; color: #8af; font-size: 11px; }
+  #hint { position: fixed; bottom: 12px; left: 14px; z-index: 10; color: #567; font: 11px ui-monospace, monospace; }
+</style>
+</head>
+<body>
+<canvas id="view"></canvas>
+<div id="panel">
+  <h1>fractal dive</h1>
+  <label>palette <select id="palette"></select></label>
+  <label>period <input id="period" type="range" min="4" max="96" step="1" /><span class="val" id="period-v"></span></label>
+  <label>SSAA <select id="ssaa"><option>1</option><option selected>2</option><option>3</option></select></label>
+  <label>res <input id="res" type="range" min="160" max="640" step="20" /><span class="val" id="res-v"></span></label>
+  <label>iter base <input id="iterbase" type="range" min="80" max="600" step="20" /><span class="val" id="iterbase-v"></span></label>
+  <label>dive spd <input id="speed" type="range" min="0" max="200" step="5" /><span class="val" id="speed-v"></span></label>
+  <div class="row"><button id="auto">⏸ pause</button><button id="rev">⇅ reverse</button></div>
+  <div id="readout"></div>
+</div>
+<div id="hint">scroll / wheel to dive · controls become lens tunables</div>
+<script type="module" src="./fractal.ts"></script>
+</body>
+</html>

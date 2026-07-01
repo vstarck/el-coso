@@ -232,11 +232,13 @@ function mountTts(
   // `rewind N` — take back the last N locked pieces. Each commit is one piece
   // lock, so we truncate the active branch to the commit N back (clamped to the
   // branch start), which re-anchors the substrate there and discards the
-  // future. Pause + autopilot state are deliberately left untouched.
-  function rewindGame(n: number): void {
+  // future. Pause + autopilot state are deliberately left untouched. Returns a
+  // friendly line for the terminal (count actually taken back, clamped).
+  function rewindGame(n: number): string {
     const count = Number.isFinite(n) && n > 0 ? Math.floor(n) : 1;
     const branch = historyActiveBranch(history);
-    if (branch.commits.length === 0) return; // no locked piece to take back
+    if (branch.commits.length === 0) return "nothing to rewind yet";
+    const taken = Math.min(count, branch.commits.length);
     const target_index = branch.commits.length - 1 - count;
     const target_tick =
       target_index >= 0 ? branch.commits[target_index]!.tick : branch.fork_tick;
@@ -245,21 +247,24 @@ function mountTts(
     last_tick = -1; // force a re-render of the rewound state
     host.setPlayheadTick(history.substrate.read.tick);
     host.bumpHistoryVersion();
+    return `rewound ${taken} piece${taken === 1 ? "" : "s"}`;
   }
 
   // Console dispatch (spec/26) — tts's own verbs only. Transport + `set theme`
-  // are built-ins. Throws on an unknown name / theme; the console surfaces it.
-  function command(name: string, cmdArgs: unknown[]): void {
+  // are built-ins. Each verb returns a friendly line the terminal prints under
+  // the echo (spec/26). Throws on an unknown name / theme; the console surfaces it.
+  function command(name: string, cmdArgs: unknown[]): string {
     switch (name) {
       case "restart":
         restartGame();
-        break;
+        return host.isPlaying() ? "new game — good luck" : "new game (paused)";
       case "auto":
         setAuto(!autopilot);
-        break;
+        return autopilot
+          ? "self-play ON — type `auto` to take the controls"
+          : "self-play OFF — you're driving (← → · ↑ rotate · space drop)";
       case "rewind":
-        rewindGame(typeof cmdArgs[0] === "number" ? cmdArgs[0] : 1);
-        break;
+        return rewindGame(typeof cmdArgs[0] === "number" ? cmdArgs[0] : 1);
       case "theme": {
         const themeName = String(cmdArgs[0] ?? "");
         if (!(themeName in THEMES)) {
@@ -268,7 +273,7 @@ function mountTts(
           );
         }
         setTunable(["theme"], themeName);
-        break;
+        return `theme → ${themeName}`;
       }
       default:
         throw new Error(`tts: unknown command "${name}"`);
@@ -411,11 +416,27 @@ const ttsLensBase: Lens<
   mount: mountTts,
 };
 
+// Figlet header shown the first time the guake console drops down (its "initial
+// state"). The console rests closed, so this doesn't affect the resting embed
+// height — it just dresses the terminal on open. (Double-quoted, not a raw
+// template: the slashes/backslashes are escaped so a line never ends in `\`
+// right before the closing backtick.)
+const TTS_BANNER = [
+  " ________________",
+  "/_  __/_  __/ __/",
+  " / /   / / _\\ \\",
+  "/_/   /_/ /___/",
+  "",
+  "type `help` for commands · Esc closes",
+].join("\n");
+
 // The static readout above + the guake console for commands: backtick drops a
 // fish-prompt terminal over the screen (built-ins + restart/auto/rewind/theme).
-// Empty banner — no help list auto-shown; type `help` to list commands. This
-// keeps the resting embed compact (the always-on command line made it ~950px).
+// The TTS figlet banner heads the console on first open; a slightly taller panel
+// (460px) gives the banner + scrollback room. The console rests closed, so the
+// resting embed stays compact (the always-on command line made it ~950px).
 export const ttsLens = withConsole(ttsLensBase, {
   description: "simplest-possible Tetris, as a terminal session",
-  banner: "",
+  banner: TTS_BANNER,
+  panelHeightPx: 460,
 });

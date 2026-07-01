@@ -5,3 +5,11 @@ export { makeSurface, put, writeText, type Cell, type Surface } from "./surface"
 export { rampGlyph, type GlyphEntry, type GlyphSet } from "./dictionary";
 export { renderToPre } from "./html-backend";
 export { renderToCanvas, type CanvasRenderOpts } from "./canvas-backend";
+export {
+  makeCanvasTextRenderer,
+  makeCanvasAtlasRenderer,
+  type SurfaceRenderer,
+  type SurfaceRendererFactory,
+  type SurfaceRendererOpts,
+} from "./renderer";
+export { parseCssColor, quantizeChannel } from "./canvas-atlas-backend";

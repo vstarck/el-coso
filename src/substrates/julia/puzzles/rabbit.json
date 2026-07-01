@@ -1,0 +1,7 @@
+{
+  "id": "rabbit",
+  "description": "The Douady rabbit — a still Julia set; explore it with iterations + zoom.",
+  "mode": "julia",
+  "orbit": { "center_re": -0.123, "center_im": 0.745, "radius": 0, "speed": 0 },
+  "res": 320
+}

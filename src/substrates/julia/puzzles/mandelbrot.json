@@ -1,0 +1,7 @@
+{
+  "id": "mandelbrot",
+  "description": "The Mandelbrot set — the atlas of every Julia set; the marker tours c.",
+  "mode": "mandelbrot",
+  "orbit": { "center_re": 0, "center_im": 0, "radius": 0.7885, "speed": 0.01 },
+  "res": 320
+}

@@ -47,6 +47,8 @@ export type WithConsoleOptions = {
   // Lines shown the first time the console opens. Defaults to a short hint
   // plus the command list.
   banner?: string;
+  // Fixed drop-down height in px (overrides the kit default ~45%/360px cap).
+  panelHeightPx?: number;
   // One-line blurb the built-in `describe` prints under the lens name.
   description?: string;
 };
@@ -93,6 +95,9 @@ export function withConsole<
         ...(options.toggleKey !== undefined ? { toggleKey: options.toggleKey } : {}),
         ...(options.prompt !== undefined ? { prompt: options.prompt } : {}),
         banner: options.banner ?? defaultBanner(source.list()),
+        ...(options.panelHeightPx !== undefined
+          ? { panelHeightPx: options.panelHeightPx }
+          : {}),
         onToggle: () => {
           for (const cb of consoleListeners) cb();
         },

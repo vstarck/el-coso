@@ -142,7 +142,10 @@ export type MountedLens<State extends TickedState> = {
   // in `Lens.commands`. Absent ⇒ the lens accepts no named commands; the embed
   // SDK / host MUST surface that as an error, never swallow it. The lens SHOULD
   // throw on an unknown command name (it propagates to the host's error channel).
-  command?: (name: string, args: unknown[]) => void;
+  // A returned string is printed to the terminal under the command echo (spec/26
+  // — the same convention as the built-ins); return nothing for a silent command.
+  // The cross-frame SDK path is fire-and-forget and ignores the return.
+  command?: (name: string, args: unknown[]) => string | void;
   // The LIVE command set available right now (spec/26 — "ask, don't read"
   // applied to commands). Absent ⇒ the static `Lens.commands` is the set.
   // Present ⇒ the console reads THIS for help / completion / dispatch, so a
