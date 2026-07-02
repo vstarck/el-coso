@@ -19,6 +19,7 @@ import type { Surface } from "./surface";
 import { renderToCanvas } from "./canvas-backend";
 
 export { makeCanvasAtlasRenderer } from "./canvas-atlas-backend";
+export { makeGlRenderer } from "./gl-backend";
 
 export type SurfaceRendererOpts = {
   // Device-pixel backing size the renderer draws at (CSS size stays caller-owned).
