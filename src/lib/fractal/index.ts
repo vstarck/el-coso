@@ -177,6 +177,68 @@ export function escapeCount(
   return mu < 0 ? 0 : mu > max ? max : mu;
 }
 
+// ── Colour lookup tables ─────────────────────────────────────────────────────
+// The per-pixel colour was a stop-list walk + a fresh RGB tuple (saturating) or
+// three Math.cos + a tuple (cyclic) — ~170k allocs/frame at the julia cap, ~1M +
+// ~2.8M cos/frame in the dev viewer at SSAA 2. Bake it once into a flat LUT and
+// index that in the hot loop instead. Quantised to LUT_SIZE steps — visually
+// identical for these smooth ramps, but no longer byte-identical to the direct call.
+const LUT_SIZE = 1024;
+
+// Saturating-palette LUT, one per PaletteName (3 values ⇒ bounded Map).
+const paletteLUTs = new Map<PaletteName, Uint8ClampedArray>();
+function paletteLUT(name: PaletteName): Uint8ClampedArray {
+  let lut = paletteLUTs.get(name);
+  if (!lut) {
+    lut = new Uint8ClampedArray(LUT_SIZE * 3);
+    for (let i = 0; i < LUT_SIZE; i++) {
+      const c = paletteColor(name, i / (LUT_SIZE - 1)); // endpoint-inclusive
+      lut[i * 3] = c[0];
+      lut[i * 3 + 1] = c[1];
+      lut[i * 3 + 2] = c[2];
+    }
+    paletteLUTs.set(name, lut);
+  }
+  return lut;
+}
+
+// Cyclic cosine LUT over ONE period, memoised on palette identity (WeakMap ⇒ a
+// throwaway palette object can't leak). Only valid when the palette completes
+// exactly one cycle per unit phase (all `c` components === 1 — true for every
+// CYCLIC_PALETTES preset). A c≠1 palette returns null and the caller falls back
+// to per-pixel cosineColor: the LUT indexes by fractional phase, which would
+// alias otherwise (correctness over speed for the exotic case).
+const cyclicLUTs = new WeakMap<CyclicPalette, Uint8ClampedArray>();
+function cyclicLUT(p: CyclicPalette): Uint8ClampedArray | null {
+  if (p.c[0] !== 1 || p.c[1] !== 1 || p.c[2] !== 1) return null;
+  let lut = cyclicLUTs.get(p);
+  if (!lut) {
+    lut = new Uint8ClampedArray(LUT_SIZE * 3);
+    for (let i = 0; i < LUT_SIZE; i++) {
+      const c = cosineColor(i / LUT_SIZE, p); // endpoint-exclusive (wraps)
+      lut[i * 3] = c[0];
+      lut[i * 3 + 1] = c[1];
+      lut[i * 3 + 2] = c[2];
+    }
+    cyclicLUTs.set(p, lut);
+  }
+  return lut;
+}
+
+// Analytic interior test for the Mandelbrot set — the main cardioid + the
+// period-2 bulb. A point inside either provably never escapes, so we skip the
+// full iteration budget (EXACT, not an approximation: escapeCount would run all
+// `max` iters and also return `max` for these points). They're the big black
+// bays that dominate the default framing. Julia mode doesn't use it — there the
+// pixel is z₀ and c is fixed, so this parameter-plane test doesn't apply.
+function inMandelbrotInterior(cr: number, ci: number): boolean {
+  const dx = cr + 1;
+  if (dx * dx + ci * ci <= 0.0625) return true; // period-2 bulb (r=1/4 at −1)
+  const xq = cr - 0.25;
+  const q = xq * xq + ci * ci;
+  return q * (q + xq) <= 0.25 * ci * ci; // main cardioid
+}
+
 // Fill an RGBA buffer (length w*h*4) with the escape-time image.
 export function renderFractal(
   data: Uint8ClampedArray,
@@ -193,6 +255,11 @@ export function renderFractal(
   const cyc = p.cyclic;
   const bailout2 = cyc ? cyc.bailout2 ?? 65536 : 4;
   const smooth = cyc ? true : p.smooth;
+  // Colour tables fetched once per frame, not per pixel.
+  const satLut = cyc ? null : paletteLUT(p.palette);
+  const cycLut = cyc ? cyclicLUT(cyc.palette) : null;
+  const density = p.color_density;
+  const invPeriod = cyc ? 1 / cyc.period : 0;
   let idx = 0;
   for (let py = 0; py < h; py++) {
     const planeY = oy + py * scale;
@@ -202,26 +269,39 @@ export function renderFractal(
       const zi0 = julia ? planeY : 0;
       const cr = julia ? p.c_re : planeX;
       const ci = julia ? p.c_im : planeY;
-      const n = escapeCount(zr0, zi0, cr, ci, max, smooth, bailout2);
+      const n =
+        !julia && inMandelbrotInterior(cr, ci)
+          ? max // provably interior — skip the iteration budget
+          : escapeCount(zr0, zi0, cr, ci, max, smooth, bailout2);
       if (n >= max) {
         data[idx] = 0;
         data[idx + 1] = 0;
         data[idx + 2] = 0;
       } else if (cyc) {
         // Seamless periodic colour off the smooth count — vivid at any depth.
-        const col = cosineColor(n / cyc.period, cyc.palette);
-        data[idx] = col[0];
-        data[idx + 1] = col[1];
-        data[idx + 2] = col[2];
+        if (cycLut) {
+          const phase = n * invPeriod;
+          const o = (((phase - Math.floor(phase)) * LUT_SIZE) | 0) * 3;
+          data[idx] = cycLut[o]!;
+          data[idx + 1] = cycLut[o + 1]!;
+          data[idx + 2] = cycLut[o + 2]!;
+        } else {
+          const col = cosineColor(n * invPeriod, cyc.palette);
+          data[idx] = col[0];
+          data[idx + 1] = col[1];
+          data[idx + 2] = col[2];
+        }
       } else {
         // Soft saturation off the RAW escape count (sqrt spreads the low end).
         // max_iter-independent: raising the budget reveals more boundary detail
         // instead of darkening the whole image.
-        const t = 1 - Math.exp(-Math.sqrt(n) * p.color_density);
-        const col = paletteColor(p.palette, t);
-        data[idx] = col[0];
-        data[idx + 1] = col[1];
-        data[idx + 2] = col[2];
+        const t = 1 - Math.exp(-Math.sqrt(n) * density);
+        let li = (t * (LUT_SIZE - 1)) | 0;
+        li = li < 0 ? 0 : li > LUT_SIZE - 1 ? LUT_SIZE - 1 : li;
+        const o = li * 3;
+        data[idx] = satLut![o]!;
+        data[idx + 1] = satLut![o + 1]!;
+        data[idx + 2] = satLut![o + 2]!;
       }
       data[idx + 3] = 255;
       idx += 4;

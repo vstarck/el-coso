@@ -1,0 +1,7 @@
+{
+  "id": "descent",
+  "palette": "ink",
+  "period": 32,
+  "depth_max": 12.6,
+  "dive_speed": 0.02
+}

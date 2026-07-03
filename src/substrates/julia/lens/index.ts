@@ -53,6 +53,20 @@ const ACCENT = "#7dd3fc";
 // shares the cap so the comparison renders the same pixel count.
 const MAX_BUF = 480;
 
+// Tunable clamp ranges — the SINGLE source for both the console `command()`
+// handlers and `setTunable()`. Before this they were duplicated (and drifting):
+// commands clamped, but `set`/embed-SDK tunable writes went in raw, so
+// `set max_iter 1e9` reached the CPU painter and froze the tab. max_iter is
+// hard-capped well below anything that janks; the rest bound the domain.
+const ITER_MIN = 8;
+const ITER_MAX = 2000;
+const ZOOM_MIN = 0.2;
+const ZOOM_MAX = 4000;
+const DENSITY_MIN = 0.01;
+const DENSITY_MAX = 2;
+const clampNum = (v: number, lo: number, hi: number): number =>
+  v < lo ? lo : v > hi ? hi : v;
+
 const SPEEDS: SpeedOption[] = [
   { id: "0.1x", label: "⅒x", mult: 0.1 },
   { id: "0.25x", label: "¼x", mult: 0.25, isDefault: true },
@@ -246,11 +260,65 @@ function mountJulia(
     if (typeof v === "number" || typeof v === "boolean" || typeof v === "string") return v;
     return undefined;
   }
+  // Validate + clamp every write — this path is reached raw from the console
+  // `set` built-in (which checks number-ness but NOT range) and from the embed
+  // SDK (which forwards host values entirely unchecked). An out-of-range number
+  // or a bogus enum here would freeze the CPU painter or throw inside renderFrom
+  // and kill the loop, so we gate each key and drop-with-a-warning on garbage
+  // (never-fail-silently, but don't let a foreign value crash the render).
+  const finite = (v: TunableValue): number | null =>
+    typeof v === "number" && Number.isFinite(v) ? v : null;
   function setTunable(path: string[], value: TunableValue): void {
     if (path.length !== 1) return;
     const key = path[0]!;
-    if (!(key in lens_state)) return;
-    (lens_state as unknown as Record<string, unknown>)[key] = value;
+    switch (key) {
+      case "max_iter": {
+        const n = finite(value);
+        if (n !== null) lens_state.max_iter = Math.round(clampNum(n, ITER_MIN, ITER_MAX));
+        break;
+      }
+      case "zoom": {
+        const n = finite(value);
+        if (n !== null) lens_state.zoom = clampNum(n, ZOOM_MIN, ZOOM_MAX);
+        break;
+      }
+      case "color_density": {
+        const n = finite(value);
+        if (n !== null) lens_state.color_density = clampNum(n, DENSITY_MIN, DENSITY_MAX);
+        break;
+      }
+      case "center_re": {
+        const n = finite(value);
+        if (n !== null) lens_state.center_re = n;
+        break;
+      }
+      case "center_im": {
+        const n = finite(value);
+        if (n !== null) lens_state.center_im = n;
+        break;
+      }
+      case "smooth":
+        if (typeof value === "boolean") lens_state.smooth = value;
+        break;
+      case "palette":
+        if (typeof value === "string" && (PALETTE_NAMES as string[]).includes(value)) {
+          lens_state.palette = value as PaletteName;
+        } else {
+          console.warn(`julia: ignoring invalid palette "${String(value)}"`);
+          return;
+        }
+        break;
+      case "mode":
+        if (value === "julia" || value === "mandelbrot") {
+          lens_state.mode = value;
+        } else {
+          console.warn(`julia: ignoring invalid mode "${String(value)}"`);
+          return;
+        }
+        break;
+      default:
+        return; // unknown tunable — ignore
+    }
     notifyTunables();
   }
   function subscribeTunables(listener: () => void): () => void {
@@ -271,15 +339,15 @@ function mountJulia(
         host.setPlaying(false);
         break;
       case "iters":
-        lens_state.max_iter = Math.max(8, Math.min(2000, Math.round(num(0, lens_state.max_iter))));
+        lens_state.max_iter = Math.round(clampNum(num(0, lens_state.max_iter), ITER_MIN, ITER_MAX));
         notifyTunables();
         break;
       case "zoom":
-        lens_state.zoom = Math.max(0.2, Math.min(4000, num(0, lens_state.zoom)));
+        lens_state.zoom = clampNum(num(0, lens_state.zoom), ZOOM_MIN, ZOOM_MAX);
         notifyTunables();
         break;
       case "density":
-        lens_state.color_density = Math.max(0.01, Math.min(2, num(0, lens_state.color_density)));
+        lens_state.color_density = clampNum(num(0, lens_state.color_density), DENSITY_MIN, DENSITY_MAX);
         notifyTunables();
         break;
       case "center":

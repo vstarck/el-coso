@@ -28,7 +28,7 @@ import {
 } from "@/lib/gl";
 import type { Surface } from "./surface";
 import type { SurfaceRendererFactory } from "./renderer";
-import { parseCssColor } from "./canvas-atlas-backend";
+import { parseCssColor } from "./color";
 
 const DEFAULT_FONT = '"JetBrains Mono", ui-monospace, monospace';
 
@@ -135,6 +135,7 @@ in vec3 a_fg;
 in vec3 a_bg;
 uniform vec2 u_dims;         // cols, rows
 uniform vec2 u_atlasGrid;    // atlas cols, rows
+uniform vec2 u_atlasCell;    // atlas cell size in texels (CELL_W, CELL_H)
 out vec2 v_uv;
 flat out vec3 v_fg;
 flat out vec3 v_bg;
@@ -146,7 +147,12 @@ void main() {
                      1.0 - p.y / u_dims.y * 2.0,   // flip y (row 0 at top of screen)
                      0.0, 1.0);
   vec2 slot = vec2(mod(a_glyph, u_atlasGrid.x), floor(a_glyph / u_atlasGrid.x));
-  v_uv = (slot + a_corner + 0.5) / u_atlasGrid;
+  // Inset the sampled region by half a texel on every side so a linear tap at a
+  // cell-filling glyph (the block shades ▓▒░█) never bleeds into the neighbouring
+  // atlas slot. a_corner spans the full cell [-0.5,0.5]; shrinking it by one texel
+  // of range keeps the sample a half-texel clear of the slot border.
+  vec2 uvCorner = a_corner * (1.0 - 1.0 / u_atlasCell);
+  v_uv = (slot + uvCorner + 0.5) / u_atlasGrid;
   v_fg = a_fg;
   v_bg = a_bg;
 }`;
@@ -220,9 +226,12 @@ export const makeGlRenderer: SurfaceRendererFactory = (canvas, opts) => {
 
   function build(): void {
     ctx = createGLContext(canvas, {
-      // No snapshot pipeline through this backend; the drawing buffer need not be
-      // preserved, and MSAA on 1:1-texel glyph quads buys nothing.
-      preserveDrawingBuffer: false,
+      // Preserve the drawing buffer: the lens's snapshot() and the scene-transition
+      // capture both read this <canvas> (toBlob / drawImage) at an arbitrary time,
+      // not right after a render — without preservation a WebGL canvas reads back
+      // blank once the compositor has flipped. The cost is negligible for one
+      // instanced draw. MSAA on 1:1-texel glyph quads still buys nothing.
+      preserveDrawingBuffer: true,
       antialias: false,
       onLost: () => {
         lost = true;
@@ -297,6 +306,7 @@ export const makeGlRenderer: SurfaceRendererFactory = (canvas, opts) => {
       shader.setUniform1i("u_atlas", 0);
       shader.setUniform2f("u_dims", s.w, s.h);
       shader.setUniform2f("u_atlasGrid", index.cols, index.rows);
+      shader.setUniform2f("u_atlasCell", ATLAS_CELL_W, ATLAS_CELL_H);
       quads.setInstanceData(data, cells);
       quads.draw();
       lastInstances = cells;

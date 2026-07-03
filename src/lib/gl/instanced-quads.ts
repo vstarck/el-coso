@@ -110,6 +110,11 @@ export function createInstancedQuads(
   gl.bindBuffer(gl.ARRAY_BUFFER, null);
 
   let instance_count = 0;
+  // Floats the GPU-side store is currently sized for. We only `bufferData`
+  // (reallocate) when the upload grows past it; steady-state frames reuse the
+  // store via `bufferSubData`, so a per-frame re-render doesn't churn a fresh
+  // ~MB allocation (a moving nm5 camera uploads cells×7 floats every frame).
+  let capacity_floats = 0;
 
   return {
     setInstanceData: (data, count) => {
@@ -121,7 +126,14 @@ export function createInstancedQuads(
       }
       instance_count = count;
       gl.bindBuffer(gl.ARRAY_BUFFER, instance_buffer);
-      gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
+      if (expected > capacity_floats) {
+        // Grow (or first upload): allocate a new store sized to this data.
+        gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
+        capacity_floats = data.length;
+      } else {
+        // Fits — overwrite the used prefix in place, no reallocation.
+        gl.bufferSubData(gl.ARRAY_BUFFER, 0, data.subarray(0, expected));
+      }
     },
     draw: () => {
       if (instance_count === 0) return;

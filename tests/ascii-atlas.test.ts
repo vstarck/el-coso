@@ -84,7 +84,7 @@ describe("atlas stats() — cache bookkeeping (the profile readout's source)", (
     };
     try {
       const r = makeCanvasAtlasRenderer(fakeCanvas(), { width: 40, height: 30 });
-      expect(r.stats?.()).toEqual({ blitCalls: 0, strips: 0, colourKeys: 0 });
+      expect(r.stats?.()).toEqual({ blitCalls: 0, fillRects: 0, strips: 0, colourKeys: 0 });
 
       r.render(surfaceWithColumnColours(["#ff0000", "#00ff00", "#0000ff"]));
       const first = r.stats!();
@@ -104,7 +104,7 @@ describe("atlas stats() — cache bookkeeping (the profile readout's source)", (
       expect(r.stats!().colourKeys).toBe(6);
 
       r.dispose();
-      expect(r.stats!()).toEqual({ blitCalls: 0, strips: 0, colourKeys: 0 }); // dispose clears
+      expect(r.stats!()).toEqual({ blitCalls: 0, fillRects: 0, strips: 0, colourKeys: 0 }); // dispose clears
     } finally {
       if (!had) delete g.OffscreenCanvas;
     }

@@ -20,40 +20,16 @@
 
 import type { Surface } from "./surface";
 import type { SurfaceRendererFactory } from "./renderer";
+import { parseCssColor, quantizeChannel } from "./color";
+
+// Re-export so existing importers (the GL backend once did, the atlas tests still
+// do) keep resolving these from here; the definitions live in ./color.
+export { parseCssColor, quantizeChannel } from "./color";
 
 const DEFAULT_FONT = '"JetBrains Mono", ui-monospace, monospace';
-const QUANT_STEP = 8; // 256/8 = 32 levels/channel
 const MAX_STRIPS = 2048; // FIFO-evicted safety cap (bounded palette rarely nears it)
-
-// Parse "rgb(r,g,b)" / "rgba(...)" / "#rgb" / "#rrggbb" → [r,g,b] 0–255. Bad
-// input falls back to white (never throws — a colour glitch must not kill render).
-export function parseCssColor(s: string): [number, number, number] {
-  if (!s) return [255, 255, 255];
-  if (s.charCodeAt(0) === 35 /* '#' */) {
-    const h = s.slice(1);
-    const wide = h.length >= 6;
-    const r = parseInt(wide ? h.slice(0, 2) : h[0]! + h[0]!, 16);
-    const g = parseInt(wide ? h.slice(2, 4) : h[1]! + h[1]!, 16);
-    const b = parseInt(wide ? h.slice(4, 6) : h[2]! + h[2]!, 16);
-    return [r || 0, g || 0, b || 0];
-  }
-  const open = s.indexOf("(");
-  const close = s.indexOf(")");
-  if (open < 0 || close < 0) return [255, 255, 255];
-  const p = s.slice(open + 1, close).split(",");
-  const n = (i: number): number => {
-    const v = parseInt(p[i] ?? "", 10);
-    return Number.isFinite(v) ? Math.max(0, Math.min(255, v)) : 0;
-  };
-  return [n(0), n(1), n(2)];
-}
-
-// Snap a channel to `step` levels so continuous shading buckets into a stable
-// palette (strip cache hits across frames).
-export function quantizeChannel(v: number, step: number = QUANT_STEP): number {
-  const q = Math.round(v / step) * step;
-  return q < 0 ? 0 : q > 255 ? 255 : q;
-}
+const MAX_COLOR_KEYS = 8192; // FIFO cap on the raw-fg→quantized-key memo (matches
+// the GL backend's colorMemo cap — a shimmering palette mints distinct keys)
 
 type TileCanvas = OffscreenCanvas | HTMLCanvasElement;
 
@@ -85,12 +61,21 @@ export const makeCanvasAtlasRenderer: SurfaceRendererFactory = (canvas, opts) =>
   let lastBlitCalls = 0; // drawImage calls in the most recent render() — the
   // fragmentation signal: a clean grid is ~one blit per column, per-cell noise
   // shatters columns into one blit per cell (the atlas's cost driver).
+  let lastFillRects = 0; // fillRect calls in the bg pass of the most recent
+  // render(). Backgrounds coalesce HORIZONTALLY, but distance-shaded wall bgs
+  // vary per column, so a row crossing walls fragments to ~one rect per cell —
+  // a second cost driver the blitCalls counter alone hides. Measured so a future
+  // bg-quantize / bake-into-strip decision is data-driven, not guessed.
 
   function colorKey(fg: string): string {
     let k = colorKeys.get(fg);
     if (k === undefined) {
       const [r, g, b] = parseCssColor(fg);
       k = `${quantizeChannel(r)},${quantizeChannel(g)},${quantizeChannel(b)}`;
+      if (colorKeys.size >= MAX_COLOR_KEYS) {
+        const oldest = colorKeys.keys().next().value;
+        if (oldest !== undefined) colorKeys.delete(oldest);
+      }
       colorKeys.set(fg, k);
     }
     return k;
@@ -146,6 +131,7 @@ export const makeCanvasAtlasRenderer: SurfaceRendererFactory = (canvas, opts) =>
         lastRows = s.h;
       }
       let blitCalls = 0; // counted this frame, published to stats() at the end
+      let fillRects = 0; // bg-pass rects this frame (published to stats())
 
       if (background !== undefined) {
         ctx.fillStyle = background;
@@ -167,6 +153,7 @@ export const makeCanvasAtlasRenderer: SurfaceRendererFactory = (canvas, opts) =>
               Math.ceil((endX - runStart) * cw) + 1,
               cellH + 1,
             );
+            fillRects++;
           }
         };
         for (let x = 0; x < s.w; x++) {
@@ -243,6 +230,7 @@ export const makeCanvasAtlasRenderer: SurfaceRendererFactory = (canvas, opts) =>
         if (active) blitRun(x, y0, s.h - y0, rg, rf, rd, rb);
       }
       lastBlitCalls = blitCalls;
+      lastFillRects = fillRects;
     },
     resize(w: number, h: number): void {
       canvas.width = w;
@@ -258,10 +246,16 @@ export const makeCanvasAtlasRenderer: SurfaceRendererFactory = (canvas, opts) =>
     // strings (a per-tick shimmering palette defeats it → it climbs every frame;
     // a bounded palette keeps it flat).
     stats(): Record<string, number> {
-      return { blitCalls: lastBlitCalls, strips: strips.size, colourKeys: colorKeys.size };
+      return {
+        blitCalls: lastBlitCalls,
+        fillRects: lastFillRects,
+        strips: strips.size,
+        colourKeys: colorKeys.size,
+      };
     },
     dispose(): void {
       lastBlitCalls = 0;
+      lastFillRects = 0;
       strips.clear();
       colorKeys.clear();
     },

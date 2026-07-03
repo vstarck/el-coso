@@ -84,6 +84,12 @@ window.addEventListener(
 );
 
 // ── render ───────────────────────────────────────────────────────────────────
+// Reused compute buffer + a signature gate: skip the whole CPU frame when nothing
+// that affects the image changed (parked, no scroll), instead of re-allocating a
+// multi-MB ImageData and recomputing every rAF. The eventual dive lens wants this
+// same discipline, so the prototype carries it.
+let img = offCtx.createImageData(1, 1); // reused; regrown when cw/ch change
+let lastSig = "";
 function render(): void {
   const aspect = window.innerWidth / window.innerHeight;
   const short = state.renderShort;
@@ -91,6 +97,14 @@ function render(): void {
   const dispH = aspect >= 1 ? short : Math.round(short / aspect);
   const cw = dispW * state.ssaa;
   const ch = dispH * state.ssaa;
+
+  const zoom = Math.pow(10, state.depth);
+  const max_iter = Math.round(state.iterBase + state.iterPerDepth * state.depth);
+  // Complete set of inputs to the image (center/mode/density/c are fixed here).
+  const sig = `${state.palette}|${state.period}|${zoom}|${max_iter}|${cw}|${ch}`;
+  if (sig === lastSig) return;
+  lastSig = sig;
+
   if (off.width !== cw || off.height !== ch) {
     off.width = cw;
     off.height = ch;
@@ -99,10 +113,7 @@ function render(): void {
     canvas.width = dispW;
     canvas.height = dispH;
   }
-
-  const zoom = Math.pow(10, state.depth);
-  const max_iter = Math.round(state.iterBase + state.iterPerDepth * state.depth);
-  const img = offCtx.createImageData(cw, ch);
+  if (img.width !== cw || img.height !== ch) img = offCtx.createImageData(cw, ch);
   renderFractal(img.data, cw, ch, {
     mode: "mandelbrot",
     c_re: 0,
