@@ -636,6 +636,12 @@ function restoreSnapshot<State extends TickedState>(
   }
 }
 
+// Uniformly recursive: the SAME type dispatch (typed array / array / object /
+// scalar) applies at every depth, not just the top level. The earlier
+// shape-enumerating helpers cloned an array nested inside an array — e.g. a
+// `number[][]` field on an element of a state array — as a plain object
+// ({"0": …}), silently corrupting the keyframe; a typed array nested below
+// the top level had the same hole.
 function cloneField(v: unknown): unknown {
   if (isTypedArray(v)) {
     // Copy via the view's own constructor — preserves the exact subtype
@@ -643,23 +649,12 @@ function cloneField(v: unknown): unknown {
     const ctor = (v as ArrayBufferView).constructor as new (src: ArrayBufferView) => ArrayBufferView;
     return new ctor(v);
   }
-  if (Array.isArray(v)) return v.map((x) => clonePlainValue(x));
-  if (v !== null && typeof v === "object") return clonePlainObject(v as Record<string, unknown>);
-  return v;
-}
-
-function clonePlainValue(v: unknown): unknown {
-  if (v !== null && typeof v === "object") return clonePlainObject(v as Record<string, unknown>);
-  return v;
-}
-
-function clonePlainObject(o: Record<string, unknown>): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const key of Object.keys(o)) {
-    const v = o[key];
-    if (Array.isArray(v)) out[key] = v.map((x) => clonePlainValue(x));
-    else if (v !== null && typeof v === "object") out[key] = clonePlainObject(v as Record<string, unknown>);
-    else out[key] = v;
+  if (Array.isArray(v)) return v.map((x) => cloneField(x));
+  if (v !== null && typeof v === "object") {
+    const o = v as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const key of Object.keys(o)) out[key] = cloneField(o[key]);
+    return out;
   }
-  return out;
+  return v;
 }

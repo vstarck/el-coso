@@ -41,6 +41,10 @@ type ToyState = {
   visited: Uint8Array; // Uint8 clone path
   steps: Int32Array; // Int32 clone path (regression)
   drift: Float32Array; // Float32 clone path
+  // Nested-composite clone path (regression): an array of objects carrying an
+  // array-of-arrays AND a typed array below the top level — the shapes the
+  // old shape-enumerating clone helpers silently turned into plain objects.
+  crew: { flats: number[][]; gauge: Float32Array }[];
 };
 
 type ToyConfig = { width: number };
@@ -57,6 +61,7 @@ function makeToyState(config: ToyConfig): ToyState {
     visited: new Uint8Array(config.width),
     steps: new Int32Array(1),
     drift: new Float32Array(1),
+    crew: [{ flats: [[0, 1], [2, 3]], gauge: new Float32Array(1) }],
   };
 }
 
@@ -79,6 +84,15 @@ const toyBundle: SubstrateBundle<ToyState, ToyConfig, ToyInput> = {
     w.steps[0] = r.steps[0]! + (next !== r.pos ? 1 : 0);
     w.drift.set(r.drift);
     w.drift[0] = next * 0.5;
+    // Copy crew the way a real substrate does (marea's copyAgent shape) —
+    // `.slice()` on the inner arrays is exactly the call that crashed when a
+    // keyframe restore had turned them into plain objects.
+    w.crew = r.crew.map((c) => ({
+      flats: c.flats.map((f) => f.slice()),
+      gauge: new Float32Array(c.gauge),
+    }));
+    w.crew[0]!.flats[0]![0] = next;
+    w.crew[0]!.gauge[0] = next * 2;
     return rng;
   },
 };
@@ -131,7 +145,9 @@ function diffState(a: ToyState, b: ToyState): string | null {
       for (let i = 0; i < aa.length; i++) {
         if (aa[i] !== bb[i]) return `${k}[${i}]`;
       }
-    } else if (va !== vb) {
+    } else if (JSON.stringify(va) !== JSON.stringify(vb)) {
+      // Structural compare — covers scalars and the nested-composite `crew`
+      // field alike (typed arrays are handled by the isView branch above).
       return k;
     }
   }
@@ -149,7 +165,7 @@ function deepCloneState(s: ToyState): ToyState {
             x: ArrayBufferView,
           ) => ArrayBufferView
         )(v as ArrayBufferView)
-      : v;
+      : structuredClone(v); // deep — `crew` must not alias the live state
   }
   return out as unknown as ToyState;
 }
@@ -297,6 +313,25 @@ describe("historyStateAt — replay from keyframe + lineage", () => {
     expect(() => historyTick(h, { dir: 1 })).not.toThrow();
     // And `steps` survived as a proper Int32Array, not a plain object.
     expect(h.substrate.read.steps).toBeInstanceOf(Int32Array);
+  });
+
+  test("keyframe restore preserves arrays nested inside arrays + typed arrays below the top level (regression)", () => {
+    // marea's agents carry `flats: number[][]` inside the agents array; the
+    // shape-enumerating clone helpers turned the INNER arrays into plain
+    // objects ({"0": …}) in the keyframe, so the first tick after a
+    // keyframe restore crashed with `f.slice is not a function` (surfaced
+    // by the thumbnail replay right after marea's first escape commit).
+    // The toy's `crew[].flats` exercises that path; `crew[].gauge` covers
+    // the sibling hole (a typed array below the top level).
+    const h = build({ keyframe_period: 5 });
+    for (let i = 0; i < MIXED.length; i++) historyTick(h, { dir: MIXED[i]! });
+    historyStateAt(h, "main", 2); // keyframe-restore path
+    const crew = h.substrate.read.crew[0]!;
+    expect(Array.isArray(crew.flats)).toBe(true);
+    expect(Array.isArray(crew.flats[0])).toBe(true);
+    expect(crew.gauge).toBeInstanceOf(Float32Array);
+    // Tick forward again — the call site that crashed pre-fix.
+    expect(() => historyTick(h, { dir: 1 })).not.toThrow();
   });
 });
 
