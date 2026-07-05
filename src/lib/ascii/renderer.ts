@@ -12,7 +12,6 @@
  * Contract that keeps the WebGL swap free: the caller hands over a BARE <canvas>
  * and never calls getContext itself (a canvas locks to one context type on first
  * getContext). A 2D backend claims "2d"; a future GL backend claims "webgl2".
- * See context/substrates/nm5/render-spec.md.
  */
 
 import type { Surface } from "./surface";

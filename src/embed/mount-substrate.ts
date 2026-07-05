@@ -69,7 +69,7 @@ export type EmbedConfig = {
    *  Toggleable at runtime via the handle's `setLoop`. */
   loop?: boolean;
   /** Opaque precompiled state a substrate's lens may consume to skip a costly
-   *  mount-time derivation (e.g. moving-swarm's tagged-particle blob). Folded
+   *  mount-time derivation (e.g. a tagged-particle blob). Folded
    *  into the level as `config.precomputed`; the lens validates + falls back. */
   precomputed?: unknown;
   /** `touch-action` for the embed frame — the page-scroll vs. capture policy on

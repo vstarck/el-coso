@@ -1,5 +1,5 @@
 /* The dive painter — CPU float64 escape-time (the ONLY path that reaches 1e12; a
- * GL float32 shader blurs out by ~1e4, see fractal-dive overview §3).
+ * GL float32 shader blurs out by ~1e4).
  *
  * ── Zoom coherence + off-thread render (the flow architecture) ────────────────
  * Successive dive frames are the SAME image at different magnification (fixed
@@ -20,7 +20,6 @@
  * from it (reprojection only ADDS magnification, never reveals un-captured area).
  * A synchronous first frame + a synchronous fallback keep it working before the
  * worker warms up and in environments without Workers (headless tests).
- * See context/substrates/fractal-dive/overview.md.
  */
 
 import DiveWorkerCtor from "./dive-worker?worker&inline";

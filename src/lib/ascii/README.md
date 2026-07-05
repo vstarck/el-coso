@@ -35,7 +35,7 @@ surface, never per-cell DOM event targets.
 
 Consumers: `blockoide` renders its well + NEXT preview through `renderToPre`
 (a supersampled small-font `<pre>`). The **canvas** backends drive the ASCII
-raycasters `tfps` and `nm5` (`@/lib/raycast` → `Surface` → canvas); nm5 uses
-`makeCanvasAtlasRenderer` (strip-blit) for Full-HD-scale grids at 60fps. An
+raycaster `tfps` (`@/lib/raycast` → `Surface` → canvas); a corruption-heavy
+raycaster uses `makeCanvasAtlasRenderer` (strip-blit) for Full-HD-scale grids at 60fps. An
 ANSI / terminal backend is designed-not-shipped — the IR is backend-agnostic,
 adding one touches no lens.

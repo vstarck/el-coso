@@ -2,7 +2,7 @@
  * the lens drains once per tick and feeds to the engine as `scrollDelta` (so it
  * rides the recorded input stream and replays exactly). Down/forward = deeper
  * (+), up/back = shallower (−). The first real wheel event fires `onIntent` so
- * the lens hands control from the auto-dive to the reader (the tts/blockoide/nm5
+ * the lens hands control from the auto-dive to the reader (the tts/blockoide
  * hand-off pattern). Sensitivity is depth units per pixel of wheel travel,
  * settable from the `scroll_sensitivity` tunable.
  */

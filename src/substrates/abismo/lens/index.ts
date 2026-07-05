@@ -168,7 +168,7 @@ function mountAbismo(
   // Every frame: present the base reprojected to the current depth (cheap, always
   // 60fps). When the worker is free and the view has drifted (or a tunable made
   // the base stale), request a fresh base — off-thread, so this never blocks. See
-  // painter.ts + context/substrates/fractal-dive/overview.md.
+  // painter.ts.
   function renderFrom(state: SubstrateState): void {
     const depth = state.depth;
     const { w, h } = dispSize();

@@ -39,11 +39,11 @@ describe("makeFrameProfiler", () => {
 
   test("warns once over budget, attributing phase + label, then stays quiet", () => {
     const msgs: string[] = [];
-    const p = makeFrameProfiler({ label: "swarm-swart-grid", budgetMs: 16, warn: (m) => msgs.push(m) });
+    const p = makeFrameProfiler({ label: "demo-substrate", budgetMs: 16, warn: (m) => msgs.push(m) });
     p.profile({ phase: "render", ms: 528 });
     p.profile({ phase: "render", ms: 600 }); // even worse — must NOT warn again
     expect(msgs).toHaveLength(1);
-    expect(msgs[0]).toContain("swarm-swart-grid");
+    expect(msgs[0]).toContain("demo-substrate");
     expect(msgs[0]).toContain("render");
     expect(msgs[0]).toContain("528");
   });

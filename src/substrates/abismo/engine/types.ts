@@ -11,7 +11,7 @@ export type SubstrateState = {
 // Per-tick injected input — the entire action surface (Q4). `scrollDelta` is the
 // signed change in depth this tick (down/forward = +, up/back = −). The lens
 // feeds it from wheel/scroll input, or from the auto-dive when idle; either way
-// it enters the RECORDED input stream, so replay is exact (cf. nm5's turnDelta).
+// it enters the RECORDED input stream, so replay is exact (cf. a recorded turnDelta).
 export type AbismoInputs = {
   scrollDelta: number;
 };

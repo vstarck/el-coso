@@ -248,7 +248,7 @@ export function createConductor(opts: ConductorOptions): Conductor {
     el.title = spec.title ?? spec.substrate;
     el.loading = "lazy";
     // allow-pointer-lock: a sandboxed iframe blocks pointer lock unless the token
-    // is present, so first-person substrates (nm5 mouselook) can't capture the
+    // is present, so first-person substrates (mouselook) can't capture the
     // mouse without it. Harmless for substrates that never request a lock.
     el.setAttribute("sandbox", "allow-scripts allow-same-origin allow-pointer-lock");
     // Permissions-Policy grant for pointer lock (belt-and-braces with the sandbox

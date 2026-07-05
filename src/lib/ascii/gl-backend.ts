@@ -12,8 +12,6 @@
  * transparent) + fixed-resolution, so a theme swap or a resolution change never
  * rebuilds it — that is the win over the Canvas2D strip cache (which the shimmer
  * defeats). Slots behind the SurfaceRenderer seam with zero upstream change.
- *
- * See context/substrates/nm5/gl-backend-spec.md.
  */
 
 import {
@@ -192,7 +190,7 @@ export const makeGlRenderer: SurfaceRendererFactory = (canvas, opts) => {
   let lastCells = 0;
   let lastInstances = 0;
 
-  // string → rgb (0–1), FIFO-capped. nm5's distance-shading + shimmer mint many
+  // string → rgb (0–1), FIFO-capped. Distance-shading + shimmer mint many
   // distinct colour strings; same growth story as the Canvas2D `colourKeys`.
   const colorMemo = new Map<string, [number, number, number]>();
   function color(s: string | undefined, fallback: [number, number, number]): [number, number, number] {

@@ -6,7 +6,7 @@
  * scroll-delta — a cadence, and an exactly reversible one (zoom-out is bit-
  * identical backward time). The lens is the forward operator (escape-time →
  * cyclic-cosine colour), CPU float64 for depth the GPU can't reach. Adopts the
- * guake console. Working name — see context/substrates/fractal-dive.
+ * guake console.
  */
 
 import { abismoBundle, abismoBttfAdapter, parseLevel } from "./engine";

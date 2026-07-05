@@ -2,7 +2,7 @@
  * "3D renderer is a Lens with a non-trivial forward operator"). No DOM, no
  * canvas, fully testable: a camera pose + a wall grid → one perpendicular hit per
  * screen column. First extracted from tfps (S113); shared the moment a second
- * consumer appeared (nm5, S114) — the renderer is generic, the *tonemap* on top
+ * consumer appeared — the renderer is generic, the *tonemap* on top
  * (glyph ramp, shading, corruption) stays substrate-side.
  *
  * Algorithm: textbook grid DDA (lodev.org/cgtutor/raycasting). One ray per
@@ -28,7 +28,7 @@ export type Column = {
   // The wall kind that was hit (>0). Consumers map kind → colour.
   tile: number;
   // The wall CELL that was hit (integer map coords). Lets a consumer look up
-  // per-cell data at the hit — e.g. nm5's corruption field at that wall.
+  // per-cell data at the hit — e.g. a corruption field at that wall.
   cx: number;
   cy: number;
 };

@@ -84,7 +84,7 @@ const toyBundle: SubstrateBundle<ToyState, ToyConfig, ToyInput> = {
     w.steps[0] = r.steps[0]! + (next !== r.pos ? 1 : 0);
     w.drift.set(r.drift);
     w.drift[0] = next * 0.5;
-    // Copy crew the way a real substrate does (marea's copyAgent shape) —
+    // Copy crew the way a real substrate does (a per-agent copyAgent shape) —
     // `.slice()` on the inner arrays is exactly the call that crashed when a
     // keyframe restore had turned them into plain objects.
     w.crew = r.crew.map((c) => ({
@@ -316,11 +316,11 @@ describe("historyStateAt — replay from keyframe + lineage", () => {
   });
 
   test("keyframe restore preserves arrays nested inside arrays + typed arrays below the top level (regression)", () => {
-    // marea's agents carry `flats: number[][]` inside the agents array; the
-    // shape-enumerating clone helpers turned the INNER arrays into plain
-    // objects ({"0": …}) in the keyframe, so the first tick after a
+    // A real substrate's agents can carry `flats: number[][]` inside the agents
+    // array; the shape-enumerating clone helpers turned the INNER arrays into
+    // plain objects ({"0": …}) in the keyframe, so the first tick after a
     // keyframe restore crashed with `f.slice is not a function` (surfaced
-    // by the thumbnail replay right after marea's first escape commit).
+    // by the thumbnail replay right after the first escape commit).
     // The toy's `crew[].flats` exercises that path; `crew[].gauge` covers
     // the sibling hole (a typed array below the top level).
     const h = build({ keyframe_period: 5 });

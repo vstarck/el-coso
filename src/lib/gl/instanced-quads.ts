@@ -113,7 +113,7 @@ export function createInstancedQuads(
   // Floats the GPU-side store is currently sized for. We only `bufferData`
   // (reallocate) when the upload grows past it; steady-state frames reuse the
   // store via `bufferSubData`, so a per-frame re-render doesn't churn a fresh
-  // ~MB allocation (a moving nm5 camera uploads cells×7 floats every frame).
+  // ~MB allocation (a moving first-person camera uploads cells×7 floats every frame).
   let capacity_floats = 0;
 
   return {

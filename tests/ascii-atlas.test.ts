@@ -1,7 +1,7 @@
 /* Glyph-atlas colour helpers (S117) — the pure logic behind the atlas backend's
  * cross-frame cache. The render loop itself needs a canvas (verified in-browser
  * via ?profile); these are the parts that must be exactly right for the cache to
- * warm (parse every colour nm5 emits; quantize stably).
+ * warm (parse every colour a shimmer-heavy substrate emits; quantize stably).
  */
 import { describe, it, expect } from "vitest";
 import {
@@ -127,7 +127,7 @@ describe("atlas stats() — cache bookkeeping (the profile readout's source)", (
       r.render(clean);
       expect(r.stats!().blitCalls).toBe(6);
 
-      // 6×6 per-cell distinct colour (nm5's corruption shimmer) → runs shatter to
+      // 6×6 per-cell distinct colour (a corruption-shimmer worst case) → runs shatter to
       // length 1 → 36 blits, one per cell. This 6× jump is the blit wall.
       const noisy = makeSurface(6, 6);
       for (let x = 0; x < 6; x++)

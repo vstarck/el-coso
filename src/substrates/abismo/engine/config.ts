@@ -1,7 +1,7 @@
 // abismo substrate config — a fixed-center infinite dive into the Mandelbrot
 // set. The world is a single scalar `depth` (log10 zoom); everything visible is
 // a pure function of it. Config carries the dive CENTER (must be a Misiurewicz
-// point for detail at every scale — see context/substrates/fractal-dive), the
+// point for detail at every scale), the
 // depth ceiling (the float64 precision wall), the auto-dive rate, and the
 // coloring/iteration defaults the lens seeds its tunables from.
 
