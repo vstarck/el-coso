@@ -1,6 +1,8 @@
 import { expect, test } from "vitest";
+import { runHeadless } from "../src/engine";
 import {
   allocSubstrate,
+  bundle,
   parseLevel,
   swap,
   tick,
@@ -145,6 +147,45 @@ test("parseLevel reads foe count and clamps/defaults behavior", () => {
   expect(config.foes[0]!.behavior.aggression).toBe(1); // clamped from 5
   expect(config.foes[0]!.behavior.jitter).toBe(0); // clamped from -1
   expect(config.foes[0]!.behavior.turn_pref).toBe("right"); // default
+});
+
+// --- spec/27 resolver-seam pilot -------------------------------------------
+
+test("tickResolve migration is byte-identical to the pre-seam engine (fixture hashes)", () => {
+  // Hashes recorded from the classic nextUniform implementation immediately
+  // before the tickResolve migration (spec/27 acceptance 3). If one of these
+  // moves, the seam changed tron's physics — that is drift, not progress.
+  const swarmExpected: Record<number, string> = {
+    1: "1ef27030",
+    7: "9cf8e145",
+    42: "c41f095a",
+  };
+  const config = parseLevel(swarm as LevelFile);
+  for (const [seed, expected] of Object.entries(swarmExpected)) {
+    const st = runHeadless(bundle, config, Number(seed), Array(120).fill(NONE));
+    expect(hashState(st), `swarm seed ${seed}`).toBe(expected);
+  }
+
+  // All-jitter level: every foe decision goes through the categorical pick,
+  // pinning the arity fold against the old floor(u*n) idiom.
+  const jittery: LevelFile = {
+    id: "jittery", W: 40, H: 40, start_x: 20, start_y: 38, start_heading: "right",
+    survive_ticks: 999,
+    foes: [
+      { start_x: 10, start_y: 10, start_heading: "down", aggression: 0, jitter: 1, turn_pref: "right" },
+      { start_x: 30, start_y: 10, start_heading: "down", aggression: 0, jitter: 1, turn_pref: "left" },
+    ],
+  };
+  const jitteryExpected: Record<number, string> = {
+    1: "bd4864e7",
+    7: "4dcf5349",
+    42: "6120ce20",
+  };
+  const jc = parseLevel(jittery);
+  for (const [seed, expected] of Object.entries(jitteryExpected)) {
+    const st = runHeadless(bundle, jc, Number(seed), Array(90).fill(NONE));
+    expect(hashState(st), `jittery seed ${seed}`).toBe(expected);
+  }
 });
 
 function hashState(s: SubstrateState): string {

@@ -1,5 +1,5 @@
 import type { RNGState, Substrate, SubstrateBundle } from "./types";
-import { allocSubstrate, swap, tick } from "./substrate";
+import { allocSubstrate, swap, tickAny } from "./substrate";
 
 // Drive a substrate headlessly: alloc, then apply one input per tick,
 // swapping each step, and return the final read State. This is the
@@ -31,7 +31,9 @@ export function runHeadless<State, Config, Inputs>(
   const substrate: Substrate<State> = allocSubstrate(bundle, config);
   let rng: RNGState = { seed };
   for (const input of inputs) {
-    rng = tick(bundle, substrate, config, rng, input);
+    // Transcript discarded — a headless probe that wants the records calls
+    // tickAny directly.
+    rng = tickAny(bundle, substrate, config, rng, input).rng;
     swap(substrate);
   }
   return substrate.read;

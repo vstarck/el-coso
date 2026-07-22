@@ -1,6 +1,6 @@
 import type { TronConfig, TronFoeBehavior } from "./config";
-import type { RNGState } from "@/engine/types";
-import { nextUniform } from "@/engine/rng";
+import type { Resolve } from "@/engine/types";
+import { makeTag } from "@/engine/resolver";
 import type { SubstrateState, TronDir, TronFoe, TronInputs } from "./types";
 
 const DIRS: TronDir[] = ["up", "down", "left", "right"];
@@ -23,8 +23,11 @@ const OPPOSITE: Record<TronDir, TronDir> = {
 const LEFT_OF: Record<TronDir, TronDir> = { up: "left", left: "down", down: "right", right: "up" };
 const RIGHT_OF: Record<TronDir, TronDir> = { up: "right", right: "down", down: "left", left: "up" };
 
-// One step of the world. Deterministic — the only stochastic element is the
-// foe AI, which threads the explicit `rng` (no Math.random) so replay,
+const tag = makeTag("tron");
+
+// One step of the world. The only stochastic element is the foe AI, whose
+// draws all go through the injected `resolve` (spec/27 pilot — the seam's
+// backing, not the substrate, decides whether chance is seeded), so replay,
 // branch, and scene re-derivation stay bit-exact.
 //
 // Order within a tick: carry scalars + copy the trail forward; freeze if
@@ -35,9 +38,9 @@ export function tickTron(
   r: SubstrateState,
   w: SubstrateState,
   config: TronConfig,
-  rng: RNGState,
+  resolve: Resolve,
   inputs: TronInputs,
-): RNGState {
+): void {
   // (0) Carry scalars; copy the occupancy grid (trails persist).
   w.W = r.W;
   w.H = r.H;
@@ -55,7 +58,7 @@ export function tickTron(
     w.alive = r.alive;
     w.outcome = r.outcome;
     w.foes = copyFoes(r.foes);
-    return rng;
+    return;
   }
 
   // (2) Player move — resolve the held heading (reject 180° reversals),
@@ -76,7 +79,7 @@ export function tickTron(
     w.alive = 0;
     w.outcome = "lost";
     w.foes = copyFoes(r.foes);
-    return rng;
+    return;
   }
   w.cells[pny * r.W + pnx] = 1;
   w.head_x = pnx;
@@ -93,64 +96,57 @@ export function tickTron(
       continue;
     }
     const behavior = config.foes[i]!.behavior;
-    const choice = chooseFoeHeading(prev, behavior, w.head_x, w.head_y, w, rng);
-    rng = choice.rng;
-    const fd = DELTAS[choice.heading];
+    const heading = chooseFoeHeading(prev, i, behavior, w.head_x, w.head_y, w, resolve);
+    const fd = DELTAS[heading];
     const fnx = prev.x + fd.dx;
     const fny = prev.y + fd.dy;
     if (!inBounds(fnx, fny, r.W, r.H) || w.cells[fny * r.W + fnx] !== 0) {
       // Foe crashed — leave its trail as a permanent wall, drop the cycle.
-      foes[i] = { x: prev.x, y: prev.y, heading: choice.heading, alive: 0 };
+      foes[i] = { x: prev.x, y: prev.y, heading, alive: 0 };
     } else {
       w.cells[fny * r.W + fnx] = i + 2;
-      foes[i] = { x: fnx, y: fny, heading: choice.heading, alive: 1 };
+      foes[i] = { x: fnx, y: fny, heading, alive: 1 };
     }
   }
   w.foes = foes;
 
   // (4) Survival win — reached the target tick alive.
   w.outcome = w.tick >= config.survive_ticks ? "won" : "in_progress";
-
-  return rng;
 }
 
 // Pick a foe's next heading. Among its three non-reversal directions, the
 // safe ones (in-bounds, empty cell) are the candidates. The decision: roll
 // jitter (random safe dir), then aggression (steer toward the player), else
-// cruise straight, turning by preference when blocked. rng is threaded so
-// the whole thing is replayable.
+// cruise straight, turning by preference when blocked. Draw structure
+// mirrors the pre-seam nextUniform chain call-for-call, so trajectories are
+// bit-identical to the classic implementation for every seed.
 function chooseFoeHeading(
   foe: TronFoe,
+  foe_index: number,
   behavior: TronFoeBehavior,
   px: number,
   py: number,
   w: SubstrateState,
-  rng: RNGState,
-): { heading: TronDir; rng: RNGState } {
+  resolve: Resolve,
+): TronDir {
   const back = OPPOSITE[foe.heading];
   const safe = DIRS.filter((d) => d !== back && isSafe(foe.x, foe.y, d, w));
-  if (safe.length === 0) return { heading: foe.heading, rng }; // doomed
+  if (safe.length === 0) return foe.heading; // doomed
 
   // jitter — a random safe direction.
-  const j = nextUniform(rng);
-  rng = j.rng;
-  if (j.value < behavior.jitter) {
-    const pick = nextUniform(rng);
-    rng = pick.rng;
-    const idx = Math.min(safe.length - 1, Math.floor(pick.value * safe.length));
-    return { heading: safe[idx]!, rng };
+  if (resolve(tag("foe", foe_index, "jitter")) < behavior.jitter) {
+    const idx = resolve(tag("foe", foe_index, "dir"), { arity: safe.length });
+    return safe[idx]!;
   }
 
   // aggression — steer toward the player among safe directions.
-  const a = nextUniform(rng);
-  rng = a.rng;
-  if (a.value < behavior.aggression) {
-    return { heading: closestTo(safe, foe, px, py), rng };
+  if (resolve(tag("foe", foe_index, "aggro")) < behavior.aggression) {
+    return closestTo(safe, foe, px, py);
   }
 
   // cruise — keep going straight if safe, else turn by preference.
-  if (safe.includes(foe.heading)) return { heading: foe.heading, rng };
-  return { heading: turnByPref(safe, foe.heading, behavior.turn_pref), rng };
+  if (safe.includes(foe.heading)) return foe.heading;
+  return turnByPref(safe, foe.heading, behavior.turn_pref);
 }
 
 // The safe direction whose resulting cell is nearest (Manhattan) to the

@@ -8,7 +8,7 @@
 import {
   allocSubstrate as engineAlloc,
   swap as engineSwap,
-  tick as engineTick,
+  tickAny as engineTickAny,
 } from "@/engine/substrate";
 import { channelAlloc } from "@/engine/channels";
 import type { RNGState, Substrate, SubstrateBundle } from "@/engine/types";
@@ -19,10 +19,12 @@ import { tickTron } from "./tick";
 import type { TronConfig } from "./config";
 import type { SubstrateState, TronInputs } from "./types";
 
+// The spec/27 pilot: tron's chance rides the resolver seam (`tickResolve`),
+// not the classic RNG-threading `tick`.
 export const tronBundle: SubstrateBundle<SubstrateState, TronConfig, TronInputs> = {
   alloc: channelAlloc(buildChannels, makeState),
   initState,
-  tick: tickTron,
+  tickResolve: tickTron,
 };
 
 export function allocSubstrate(config: TronConfig): Substrate<SubstrateState> {
@@ -39,7 +41,7 @@ export function tick(
   rng: RNGState,
   inputs: TronInputs,
 ): RNGState {
-  return engineTick(tronBundle, substrate, config, rng, inputs);
+  return engineTickAny(tronBundle, substrate, config, rng, inputs).rng;
 }
 
 export { parseLevel, type LevelFile, type FoeFile } from "./level";

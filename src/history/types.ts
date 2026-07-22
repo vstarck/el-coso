@@ -16,14 +16,35 @@
 //                  Caches for state_at; removing them must not change
 //                  observable behavior.
 
-import type { RNGState, Substrate, SubstrateBundle } from "@/engine/types";
+import type {
+  ResolutionRecord,
+  RNGState,
+  Substrate,
+  SubstrateBundle,
+} from "@/engine/types";
 
 export type BranchId = string;
 
 export type InputEntry<Input> = {
   tick: number;
   input: Input;
+  // Engine-owned transcript (spec/27 Stage B): resolver answers minted
+  // during this tick, in call order. Written by the history driver, never
+  // by substrate code. Absent when the tick resolved nothing or transcript
+  // recording is off (resolver_mode "rng"). Load-bearing for replay ONLY
+  // under `entropy` mode; under `rng`/`verify` the keyframed seed
+  // re-derives the same answers.
+  resolutions?: ResolutionRecord[];
 };
+
+// How the history layer backs the resolver seam (spec/27):
+//   "rng"     — threaded RNG, no transcript; replay re-derives from the
+//               keyframed seed. The pre-spec contract, verbatim.
+//   "verify"  — threaded RNG live AND transcript recorded; replay re-derives
+//               and compares, throwing on drift. CI drift detector.
+//   "entropy" — injected unseeded draw; the transcript is the ONLY record
+//               of the past, and replay serves it verbatim.
+export type ResolverMode = "rng" | "verify" | "entropy";
 
 export type Commit<Payload> = {
   id: number;
@@ -49,7 +70,10 @@ export type Commit<Payload> = {
 // `read` struct (typed arrays cloned; scalars copied). Restored into BOTH
 // substrate buffers so `doubled: true` channels don't carry staleness in
 // the swap-target buffer. RNG is captured alongside so replay resumes
-// deterministically from the keyframe.
+// deterministically from the keyframe. Under resolver_mode "entropy" the
+// captured rng is vestigial (populated, ignored): replay comes from the
+// input log's transcripts, never from seed re-derivation (spec/27
+// Invariant 10).
 //
 // State is shape-erased here. Generic copy logic in `history.ts` iterates
 // fields with runtime typeof checks — maps cleanly to GDScript Dictionary
@@ -117,9 +141,23 @@ export type History<
   rng_seed_initial: number;
   branches: Record<BranchId, Branch<State, Input, CommitPayload>>;
   active: BranchId;
+  // Which branch the substrate buffers currently represent (together with
+  // `substrate.read.tick`). Maintained by historyTick / historyStateAt.
+  // Distinct from `active`: a read-only scrub (historyStateAt on another
+  // branch) moves the anchor without moving `active`, and the fast-path
+  // check keys on the anchor — otherwise a same-tick query across branches
+  // would alias one branch's state onto another.
+  anchored_branch: BranchId;
   root_branch_id: BranchId;
   next_commit_id: number;
   keyframe_period: number;
+  // Resolver backing (spec/27 Stage B). Absent = "rng" (default;
+  // byte-identical to pre-spec behavior, no transcript recorded).
+  resolver_mode?: ResolverMode;
+  // Required iff resolver_mode === "entropy". Injected impure draw in
+  // [0, 1) — the engine stays platform-agnostic; the app tier supplies
+  // e.g. a crypto.getRandomValues-based source.
+  entropy_draw?: () => number;
 };
 
 // Shape-erased History, for the recursive `Commit.inner` slot. A nested

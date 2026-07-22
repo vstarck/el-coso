@@ -494,3 +494,35 @@ describe("historyListBranches", () => {
     expect(ids).toEqual(["main", "other", "side"]);
   });
 });
+
+describe("anchored-branch fast path (cross-branch aliasing regression)", () => {
+  // The historyStateAt fast path used to key on (h.active, tick): after a
+  // read-only scrub of a NON-active branch, a same-tick query for the active
+  // branch aliased the scrubbed branch's state onto it. The anchor field
+  // tracks what the buffers actually hold. Caught by the spec/27
+  // cross-branch transcript tests.
+
+  test("a same-tick scrub across branches returns each branch's own state", () => {
+    const h = build({ keyframe_period: Infinity });
+    for (const dir of [1, 1, 1, 1]) historyTick(h, { dir }); // main@4, pos 4
+    historyBranchFrom(h, "main", 2, "b");
+    historySetActiveBranch(h, "b"); // anchored b@2, pos 2
+    historyTick(h, { dir: -1 }); // b@3, pos 1
+    historyTick(h, { dir: -1 }); // b@4, pos 0
+    expect(historyStateAt(h, "main", 4).pos).toBe(4); // scrub non-active branch
+    expect(historyStateAt(h, "b", 4).pos).toBe(0); // same tick, active branch
+  });
+
+  test("historyTick after scrubbing another branch re-anchors to the active head", () => {
+    const h = build({ keyframe_period: Infinity });
+    for (const dir of [1, 1, 1, 1]) historyTick(h, { dir });
+    historyBranchFrom(h, "main", 2, "b");
+    historySetActiveBranch(h, "b");
+    historyTick(h, { dir: -1 }); // b@3, pos 1
+    historyTick(h, { dir: -1 }); // b@4, pos 0
+    historyStateAt(h, "main", 4); // park the buffers on main@4 (pos 4)
+    historyTick(h, { dir: 1 }); // must auto-anchor back to b@4 first
+    expect(h.substrate.read.tick).toBe(5);
+    expect(h.substrate.read.pos).toBe(1); // 0 + 1, not 4 + 1
+  });
+});

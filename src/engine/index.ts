@@ -1,4 +1,8 @@
 export type {
+  Resolve,
+  ResolveOpts,
+  ResolutionKind,
+  ResolutionRecord,
   RNGState,
   Substrate,
   SubstrateBundle,
@@ -7,9 +11,18 @@ export type {
 export type { ChannelBag, ChannelDescriptor } from "./channels";
 export { allocChannels, channelAlloc } from "./channels";
 
-export { allocSubstrate, swap, tick } from "./substrate";
+export { allocSubstrate, swap, tick, tickAny, tickReplay } from "./substrate";
 export { runHeadless } from "./headless";
 export { nextNormal, nextRange, nextUniform } from "./rng";
+export {
+  makeEntropyResolve,
+  makeRecordResolve,
+  makeRngResolve,
+  makeTag,
+  makeVerifyResolve,
+  parseTag,
+  resolveDraw,
+} from "./resolver";
 
 export type { Mailbox, Schedulable, Scheduler } from "./kit/scheduler";
 export { makeMailbox, makeScheduler } from "./kit/scheduler";

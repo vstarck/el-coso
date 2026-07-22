@@ -23,5 +23,6 @@ export type {
   HistoryAdapter,
   InputEntry,
   Keyframe,
+  ResolverMode,
   TickedState,
 } from "./types";

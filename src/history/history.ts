@@ -1,16 +1,19 @@
 import {
   allocSubstrate as engineAlloc,
   swap as engineSwap,
-  tick as engineTick,
+  tickAny as engineTickAny,
+  tickReplay as engineTickReplay,
 } from "@/engine/substrate";
-import type { SubstrateBundle } from "@/engine/types";
+import type { ResolutionRecord, SubstrateBundle } from "@/engine/types";
 import type {
   Branch,
   BranchId,
   Commit,
   History,
   HistoryAdapter,
+  InputEntry,
   Keyframe,
+  ResolverMode,
   TickedState,
 } from "./types";
 
@@ -33,6 +36,10 @@ export function createHistory<
   adapter: HistoryAdapter<State, Input, CommitPayload>;
   keyframe_period?: number;
   root_branch_id?: string;
+  // Resolver backing (spec/27). Absent = "rng"; "entropy" additionally
+  // requires entropy_draw and a tickResolve bundle (checked at historyTick).
+  resolver_mode?: ResolverMode;
+  entropy_draw?: () => number;
 }): History<State, Config, Input, CommitPayload> {
   const substrate = engineAlloc(args.bundle, args.config);
   const root_branch_id = args.root_branch_id ?? DEFAULT_ROOT_BRANCH_ID;
@@ -47,10 +54,13 @@ export function createHistory<
     rng_seed_initial: args.rng_seed,
     branches: {},
     active: root_branch_id,
+    anchored_branch: root_branch_id,
     root_branch_id,
     next_commit_id: 0,
     keyframe_period,
   };
+  if (args.resolver_mode !== undefined) h.resolver_mode = args.resolver_mode;
+  if (args.entropy_draw !== undefined) h.entropy_draw = args.entropy_draw;
   h.branches[root_branch_id] = makeEmptyBranch(root_branch_id, null, 0, 0);
 
   emitRootCommit(h);
@@ -74,6 +84,7 @@ export function historyReset<
   for (const key of Object.keys(h.branches)) delete h.branches[key];
   h.branches[h.root_branch_id] = makeEmptyBranch(h.root_branch_id, null, 0, 0);
   h.active = h.root_branch_id;
+  h.anchored_branch = h.root_branch_id;
   h.next_commit_id = 0;
   emitRootCommit(h);
   pushKeyframe(h, h.branches[h.root_branch_id]!);
@@ -104,14 +115,43 @@ export function historyTick<
     historyStateAt(h, h.active, active.head_tick);
   }
 
-  h.rng = engineTick(h.bundle, h.substrate, h.config, h.rng, input);
+  // Resolver backing (spec/27). Under "rng" (default) the transcript is
+  // derived from the threaded RNG and discarded — replay re-derives from
+  // the keyframed seed, the pre-spec contract verbatim. Under
+  // "verify"/"entropy" the tick's records are attached to the InputEntry,
+  // so the transcript rides the input log (branch-scoped by construction).
+  const mode = h.resolver_mode ?? "rng";
+  if (mode === "entropy") {
+    if (!h.bundle.tickResolve) {
+      throw new Error(
+        "resolver_mode 'entropy' requires a tickResolve bundle — a classic tick threads seeded RNG (spec/27)",
+      );
+    }
+    if (!h.entropy_draw) {
+      throw new Error("resolver_mode 'entropy' requires entropy_draw (spec/27)");
+    }
+  }
+  const t = engineTickAny(
+    h.bundle,
+    h.substrate,
+    h.config,
+    h.rng,
+    input,
+    mode === "entropy" ? h.entropy_draw : undefined,
+  );
+  h.rng = t.rng;
   engineSwap(h.substrate);
 
   const before = h.substrate.write;
   const after = h.substrate.read;
 
-  active.inputs.push({ tick: after.tick, input });
+  const entry: InputEntry<Input> = { tick: after.tick, input };
+  if (mode !== "rng" && t.records !== null && t.records.length > 0) {
+    entry.resolutions = t.records;
+  }
+  active.inputs.push(entry);
   active.head_tick = after.tick;
+  h.anchored_branch = active.id;
 
   const payload = h.adapter.commit_predicate(before, after, input);
   if (payload !== null) {
@@ -172,6 +212,7 @@ export function historyStateAt<
     replayForward(h, lineage, best.segment_index, k.tick, tick);
   }
 
+  h.anchored_branch = branch_id;
   return h.substrate.read;
 }
 
@@ -188,6 +229,14 @@ export function historyStateAt<
 // caller is responsible for ensuring the substrate is at the expected
 // tick first (typically by having previously called historyStateAt to
 // re-anchor to a starting point).
+//
+// `records` — the tick's recorded resolutions, for callers walking an input
+// log whose entries carry a transcript (spec/27: pass
+// `entry.resolutions ?? undefined`). When absent, the fallback follows the
+// history's resolver_mode: under "rng" the resolver re-derives from the
+// threaded RNG exactly as before; under "verify"/"entropy" absence means
+// "this tick resolved nothing" and a bundle that does resolve throws
+// instead of silently falling back to seed derivation (Invariant 10).
 export function historyAdvance<
   State extends TickedState,
   Config,
@@ -196,8 +245,18 @@ export function historyAdvance<
 >(
   h: History<State, Config, Input, CommitPayload>,
   input: NoInfer<Input>,
+  records?: ResolutionRecord[],
 ): void {
-  h.rng = engineTick(h.bundle, h.substrate, h.config, h.rng, input);
+  const mode = h.resolver_mode ?? "rng";
+  h.rng = engineTickReplay(
+    h.bundle,
+    h.substrate,
+    h.config,
+    h.rng,
+    input,
+    records ?? (mode === "rng" ? null : []),
+    mode === "verify",
+  ).rng;
   engineSwap(h.substrate);
 }
 
@@ -502,6 +561,7 @@ function replayForward<S extends TickedState, C, I, P>(
   from_tick: number,
   to_tick: number,
 ): void {
+  const mode = h.resolver_mode ?? "rng";
   let cursor_tick = from_tick;
   for (let i = from_segment; i < lineage.length; i++) {
     const seg = lineage[i]!;
@@ -520,7 +580,20 @@ function replayForward<S extends TickedState, C, I, P>(
           `replay: missing input at tick ${next_tick} on branch ${seg.branch.id} (idx ${idx})`,
         );
       }
-      h.rng = engineTick(h.bundle, h.substrate, h.config, h.rng, entry.input);
+      // Serve the entry's transcript per resolver_mode (spec/27): "rng" —
+      // no transcript, re-derive from the keyframed seed; "verify" —
+      // re-derive AND compare, throw on drift; "entropy" — the transcript
+      // is the only past (an absent entry means "resolved nothing", and a
+      // bundle that does resolve throws rather than falling back to seed).
+      h.rng = engineTickReplay(
+        h.bundle,
+        h.substrate,
+        h.config,
+        h.rng,
+        entry.input,
+        entry.resolutions ?? (mode === "rng" ? null : []),
+        mode === "verify",
+      ).rng;
       engineSwap(h.substrate);
       cursor_tick = next_tick;
     }
@@ -577,18 +650,18 @@ function pushKeyframe<S extends TickedState, C, I, P>(
   });
 }
 
-// True iff the substrate's current `read` carries (branch, tick). Cheap
-// equality check on the tick counter plus a lookup into the branch's
-// keyframe of where we last anchored — but since we don't track that
-// explicitly, we rely on tick equality + active match. Adequate for
-// avoiding redundant work in the common case (consecutive ticks on the
-// same branch); a missed fast-path is correctness-safe — just slower.
+// True iff the substrate's current `read` carries (branch, tick), keyed on
+// the explicitly tracked anchor. The anchor (not `active`) is what the
+// buffers actually hold: a read-only scrub of another branch moves it
+// without moving `active`, and keying the fast path on `active` aliased
+// one branch's state onto another whenever the ticks coincided (caught by
+// the spec/27 cross-branch transcript tests).
 function substrateAt<S extends TickedState, C, I, P>(
   h: History<S, C, I, P>,
   branch_id: BranchId,
   tick: number,
 ): boolean {
-  return branch_id === h.active && h.substrate.read.tick === tick;
+  return branch_id === h.anchored_branch && h.substrate.read.tick === tick;
 }
 
 // --- snapshot helpers -----------------------------------------------------

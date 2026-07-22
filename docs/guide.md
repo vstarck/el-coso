@@ -16,29 +16,41 @@ state plus one pure step:
 (state, inputs, rng) → (state, rng)
 ```
 
-A substrate ships as a three-function **bundle**:
+A substrate ships as a **bundle** — two allocation hooks plus one step, in
+either of two shapes:
 
 ```ts
 type SubstrateBundle<State, Config, Inputs> = {
-  alloc:     (config: Config) => { read: State; write: State };
-  initState: (state: State, config: Config) => void;
-  tick:      (read, write, config, rng, inputs) => rng;
+  alloc:        (config: Config) => { read: State; write: State };
+  initState:    (state: State, config: Config) => void;
+  tick?:        (read, write, config, rng, inputs) => rng;
+  tickResolve?: (read, write, config, resolve, inputs) => void;
 };
 ```
 
 - **`alloc`** allocates the world's state twice — a *read* buffer (the
   current frame) and a *write* buffer (the next one).
 - **`initState`** seeds the opening position from the config.
-- **`tick`** is the step. It reads `read`, writes the next frame into
-  `write`, and returns the next RNG. The engine then swaps the buffers, so
-  last tick's `write` becomes this tick's `read`.
+- **The step** reads `read` and writes the next frame into `write`; the
+  engine then swaps the buffers, so last tick's `write` becomes this
+  tick's `read`. A bundle provides at least one shape (both ⇒ the engine
+  uses `tickResolve`):
+  - **`tick`** — the classic shape: the step takes a small seeded RNG
+    value and returns the next, threading randomness *through* the step
+    explicitly.
+  - **`tickResolve`** — the resolver shape: every chancy outcome is asked
+    of an injected `resolve(tag, opts?) => number` (a plain uniform, a
+    weighted pick, a range, a normal). The backing behind `resolve` —
+    seeded RNG, a recorded transcript, injected entropy — belongs to the
+    driver, and the substrate can't tell which it got.
 
 `config` is the world's fixed parameters (board size, rules, the puzzle);
 it never changes within a run. `inputs` is whatever the player did this
 tick — a steering direction, a placed edit, or nothing at all for a world
-that runs itself. `rng` is a small seeded value threaded *through* the
-step: the tick takes one and returns the next, so randomness is replayable
-rather than ambient.
+that runs itself. Either way, randomness is replayable rather than
+ambient: under the default backing the two shapes are bit-identical, and
+`tron` (which ships on `tickResolve`) rolls its foe AI the exact same way
+it did as a classic bundle.
 
 The engine itself is tiny — it allocates, ticks, and swaps. It has **no
 clock**. Nothing inside it decides when a tick happens; that is the lens's
@@ -52,9 +64,10 @@ and real-time through another.
 Two principles run underneath everything:
 
 - **No magic.** Every behavior is explicit in the data. A tick may read
-  only its `state`, `inputs`, `config`, and `rng`. There is no hidden
-  coupling and no engine surprise — what a world does is fully visible in
-  what it is.
+  only its `state`, `inputs`, `config`, and its source of chance (the
+  threaded `rng` or the injected `resolve`). There is no hidden coupling
+  and no engine surprise — what a world does is fully visible in what it
+  is.
 - **The world doesn't help.** The engine never hints, validates, scores, or
   surfaces structure on your behalf. What you learn about a world, you learn
   by watching it run. Looking is free; knowing costs an experiment.
@@ -62,9 +75,14 @@ Two principles run underneath everything:
 These hold the engine to a set of hard invariants:
 
 - **The tick is pure.** No `Date.now`, no `Math.random`, no I/O. Time enters
-  a world only as ticks; randomness only through the threaded RNG.
+  a world only as ticks; randomness only through the threaded RNG or the
+  injected resolver.
 - **Determinism.** Same seed + same input log ⇒ the same trajectory, every
-  time, on every machine.
+  time, on every machine. (A resolver bundle can also run in two opt-in
+  history modes: `verify`, which records each tick's resolved answers on
+  the input log and re-checks them on replay — a drift detector — and
+  `entropy`, which backs chance with an unseeded source so that recorded
+  transcript *becomes* the replay-determinism source instead of the seed.)
 - **History is therefore free.** The history layer stores the input log plus
   periodic **keyframes** (state snapshots) and a branch tree. Any past
   moment is reconstructed by restoring the nearest keyframe and replaying

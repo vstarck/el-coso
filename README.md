@@ -35,8 +35,9 @@ engine      double-buffered state, seeded RNG, one pure tick — no clock
 substrate   a world: state plus one pure step, nothing else
 ```
 
-A **substrate** is a self-contained world, plugged in through one
-three-function bundle (`alloc` / `initState` / `tick`). The engine is
+A **substrate** is a self-contained world, plugged in through one small
+bundle (`alloc` / `initState` / one step — classic `tick`, or
+`tickResolve` with chance behind an opaque resolver). The engine is
 deliberately small: it allocates, steps, and swaps — *when* to tick is the
 lens's decision, so the same world is turn-based through one lens and
 real-time through another.
