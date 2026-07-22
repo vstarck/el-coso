@@ -17,4 +17,11 @@ Picked by the *design-questions pipeline* (see [`docs/guide.md`](../../../docs/g
   `bttf/commit-on-tick-advance.ts`.
 - **Topology** — forthcoming `grid/hex.ts`, `grid/square.ts`.
 
-This README will list extracted helpers as they land. Today: none.
+This README will list extracted helpers as they land.
+
+- **Coordination** — [`scheduler.ts`](scheduler.ts): `makeScheduler` /
+  `makeMailbox` — a coordinate-time scheduler for substrates that each own a
+  clock (proper-time ticking, authored coincidence order) + mailbox coupling
+  (deposit-across-the-gap, receiver-folds). Extracted S142 from cronos once
+  tierra became the 2nd consumer; a pure move (cronos's locks are its
+  regression). Re-exported from [`../index.ts`](../index.ts).
