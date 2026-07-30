@@ -7,6 +7,7 @@
  * This file is intentionally one screenful so the design-questions
  * pipeline shows through. */
 
+import type { ReadonlyState } from "@/lenses/types";
 import type { SubstrateState } from "../engine";
 
 export type ExampleRenderOpts = {
@@ -20,7 +21,7 @@ const COLOR_BG = "#0b0d12";
 const COLOR_GRID = "rgba(255, 255, 255, 0.05)";
 
 export function drawExampleFrame(
-  state: SubstrateState,
+  state: ReadonlyState<SubstrateState>,
   ctx: CanvasRenderingContext2D,
   opts: ExampleRenderOpts,
 ): void {

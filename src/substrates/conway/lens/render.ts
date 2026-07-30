@@ -3,6 +3,7 @@
  * shifted. Caller supplies the destination context and the pan offset
  * (in CSS pixels — the lens never knows about canvas-vs-world transform). */
 
+import type { ReadonlyState } from "@/lenses/types";
 import type { SubstrateState } from "../engine";
 
 // Grid line opacity — visible enough that empty regions still feel like
@@ -24,7 +25,7 @@ export type ConwayRenderOpts = {
 };
 
 export function drawConwayFrame(
-  state: SubstrateState,
+  state: ReadonlyState<SubstrateState>,
   ctx: CanvasRenderingContext2D,
   opts: ConwayRenderOpts,
 ): void {

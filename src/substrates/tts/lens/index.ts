@@ -35,6 +35,7 @@ import type {
   MountedLens,
   OutcomeBanner,
   TunableValue,
+  ReadonlyState,
 } from "@/lenses/types";
 import type {
   TtsCommitPayload,
@@ -309,7 +310,7 @@ function mountTts(
   }
 
   // --- Render: re-stringify on each new tick ----------------------------
-  function renderFrom(state: SubstrateState): void {
+  function renderFrom(state: ReadonlyState<SubstrateState>): void {
     if (state.tick === last_tick) return;
     last_tick = state.tick;
     bodyEl.textContent = renderJson(state, {

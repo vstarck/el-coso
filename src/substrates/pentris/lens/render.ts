@@ -2,6 +2,7 @@
 // the NEXT-piece mini, and column A's dev-tool digest all live here so the
 // mount file stays wiring.
 
+import type { ReadonlyState } from "@/lenses/types";
 import type { PentrisConfig, SubstrateState } from "../engine";
 import { PENTOMINOES, PIECE_NAMES, hashState, pieceCells, collides } from "../engine";
 
@@ -76,7 +77,7 @@ export type BoardDrawOpts = {
 
 export function drawBoard(
   ctx: CanvasRenderingContext2D,
-  s: SubstrateState,
+  s: ReadonlyState<SubstrateState>,
   o: BoardDrawOpts,
 ): void {
   const cp = o.cell_px;
@@ -182,7 +183,7 @@ export function drawMiniPiece(
 // upper-case. Scalars stay one line each (the piece pose collapses to a
 // compact string) so the whole digest fits the panel without scrolling on
 // a normal viewport.
-export function boardDigest(s: SubstrateState, config: PentrisConfig): string {
+export function boardDigest(s: ReadonlyState<SubstrateState>, config: PentrisConfig): string {
   const rows: string[] = [];
   for (let y = 0; y < s.H; y++) {
     let row = "";

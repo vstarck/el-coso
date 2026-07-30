@@ -7,6 +7,7 @@
  * Extracted from the former `blockoide-well` lens — render half only.
  */
 
+import type { ReadonlyState } from "@/lenses/types";
 import { renderToPre } from "@/lib/ascii";
 import type { GlyphSet } from "@/lib/ascii";
 import type { LensTunable, TunableValue } from "@/lenses/types";
@@ -89,7 +90,7 @@ export function makeWellView(
     return () => tunableListeners.delete(listener);
   }
 
-  function renderFrom(state: SubstrateState): void {
+  function renderFrom(state: ReadonlyState<SubstrateState>): void {
     const { ssx, ssy } = ssFor(lens_state.cell_chars ?? "6");
     renderToPre(buildWellSurface(state, glyphSet(), ssx, ssy), well);
   }

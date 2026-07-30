@@ -14,6 +14,7 @@ import type {
   LensMountArgs,
   MountedLens,
   ViewportInset,
+  ReadonlyState,
 } from "@/lenses/types";
 import type {
   DvdCommitPayload,
@@ -84,10 +85,10 @@ export function sy(t: Transform, wy: number): number {
 
 // Particle 0's world position / implicit Verlet velocity — every lens reads
 // the same minimal state and reconstructs from it.
-export function particlePos(s: SubstrateState): { x: number; y: number } {
+export function particlePos(s: ReadonlyState<SubstrateState>): { x: number; y: number } {
   return { x: s.px[0] ?? 0, y: s.py[0] ?? 0 };
 }
-export function particleVel(s: SubstrateState): { x: number; y: number } {
+export function particleVel(s: ReadonlyState<SubstrateState>): { x: number; y: number } {
   return { x: (s.px[0] ?? 0) - (s.ppx[0] ?? 0), y: (s.py[0] ?? 0) - (s.ppy[0] ?? 0) };
 }
 
@@ -140,7 +141,7 @@ export type VectorOverlaySpec = {
   name: string;
   color: string;
   gain: number; // world-space multiplier so small vectors stay visible
-  vector: (s: SubstrateState) => { x: number; y: number };
+  vector: (s: ReadonlyState<SubstrateState>) => { x: number; y: number };
 };
 
 export function createVectorOverlay(
@@ -171,7 +172,7 @@ export function createVectorOverlay(
 
     let visible = true;
 
-    function renderFrom(state: SubstrateState): void {
+    function renderFrom(state: ReadonlyState<SubstrateState>): void {
       const c = ctx!;
       c.clearRect(0, 0, canvas.width, canvas.height);
       if (!visible) return;

@@ -11,12 +11,13 @@
  * the substrate (history) is left untouched.
  */
 
+import type { ReadonlyState } from "@/lenses/types";
 import type { LensTunable, TunableValue } from "@/lenses/types";
 import type { BlockoideConfig, SubstrateState } from "../../engine";
 
 export type CenterView = {
   // Pure draw against arbitrary state — no time advance, no mutation.
-  renderFrom(state: SubstrateState): void;
+  renderFrom(state: ReadonlyState<SubstrateState>): void;
   unmount(): void;
   // The view's own tunables (perspective / glyph set / tilt / …). The deck
   // exposes these to the chrome by forwarding to the active view.

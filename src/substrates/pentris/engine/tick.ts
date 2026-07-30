@@ -3,6 +3,7 @@
 //   hard drop | gravity → lock → clear lines → win/lose → spawn next.
 // Pure and rng-threaded: piece draws are the only stochastic step.
 
+import type { ReadonlyState } from "@/history";
 import type { RNGState } from "@/engine/types";
 import { nextRange } from "@/engine/rng";
 import type { PentrisConfig } from "./config";
@@ -13,7 +14,7 @@ import { PENTOMINOES, pieceCells, pieceWidth } from "./pieces";
 // settled stack? Cells above the top (y < 0) are legal — pieces enter from
 // there.
 export function collides(
-  s: SubstrateState,
+  s: ReadonlyState<SubstrateState>,
   kind: number,
   rot: number,
   px: number,

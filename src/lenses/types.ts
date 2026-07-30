@@ -5,6 +5,7 @@
 
 import type {
   History,
+  ReadonlyState,
   TickedState,
 } from "@/history";
 import type { Params, Rule, SpeedOption } from "@/lib/types";
@@ -88,13 +89,28 @@ export function targetIsPixelSurface(
   return lens.target_kind === "canvas2d" || lens.target_kind === "webgl";
 }
 
+// The lens read contract. Defined in `@/history/types` — it describes the
+// history layer's live buffer, and the engine tier needs it too without taking
+// a dependency on this file — and re-exported here because this is where lens
+// authors look. Its comment carries the hazard, and the two things it cannot
+// say. NOTE the separate door it does NOT cover: several lenses deliberately
+// write the live edge from a console-command handler (julia's `c`,
+// array-sort's `freeze`/`shuffle`). That path is unrecorded and out of scope.
+export type { ReadonlyState };
+
 export type MountedLens<State extends TickedState> = {
   unmount(): void;
   // Pure render pass against arbitrary state. Does NOT advance time, does
-  // NOT mutate the history, does NOT assume the loop is paused. Called
-  // once per frame by the host's rAF. Composing lenses dispatch this
-  // recursively to their children inside their own renderFrom.
-  renderFrom(state: State): void;
+  // NOT mutate the state it is handed (see ReadonlyState above), does NOT
+  // assume the loop is paused. Called once per frame by the host's rAF.
+  //
+  // DECLARED AS A PROPERTY, NOT A METHOD, AND THAT IS LOAD-BEARING: method
+  // shorthand is bivariant in its parameters, so `renderFrom(state: State)`
+  // — the form every lens actually writes — would be accepted against a
+  // readonly parameter and the contract would gate nothing. The function-type
+  // property is contravariant and rejects it. Do not "tidy" this back into
+  // method shorthand.
+  renderFrom: (state: ReadonlyState<State>) => void;
   // Autonomous tick — advances substrate time. Host's rAF drains the
   // tick accumulator (gated by store.playing + window focus) calling
   // this repeatedly when present. Render-only lenses (a turn-based maze) omit it. Composing lenses typically inherit the tick
@@ -117,7 +133,10 @@ export type MountedLens<State extends TickedState> = {
   // lenses whose target vocabulary has no natural Canvas 2D summary
   // (ASCII, chart-shaped DOM) decline; the timeline tree falls back to
   // commitGlyph alone.
-  renderThumbnail?: (state: State, canvas: HTMLCanvasElement) => void;
+  // Read-only in the same sense as renderFrom, and for a sharper reason: the
+  // buffer handed here is KEYFRAME-RESTORED (`app/lib/thumbnail.ts`), so a
+  // write lands one tier deeper than the live edge.
+  renderThumbnail?: (state: ReadonlyState<State>, canvas: HTMLCanvasElement) => void;
   // One glyph per commit on the timeline tree. The lens reads the commit
   // payload (passed as a flat Params projection) and returns a single
   // symbol that summarizes the event in the lens's vocabulary. The

@@ -18,6 +18,7 @@ import type {
   MountedLens,
   TunableValue,
   ViewportInset,
+  ReadonlyState,
 } from "@/lenses/types";
 import type {
   DvdCommitPayload,
@@ -88,7 +89,7 @@ function mountHud(
     "dvd-projection": null,
   };
 
-  function renderFrom(_state: SubstrateState): void {
+  function renderFrom(_state: ReadonlyState<SubstrateState>): void {
     const c = ctx!;
     c.clearRect(0, 0, canvas.width, canvas.height);
 

@@ -10,6 +10,7 @@
 // bevel (lighter top-left, darker bottom-right) + a 1-char gutter so each
 // block reads as a delineated 3D tile rather than one fat glyph.
 
+import type { ReadonlyState } from "@/lenses/types";
 import { makeSurface, put, rampGlyph, type GlyphSet, type Surface } from "@/lib/ascii";
 import {
   landingZ,
@@ -128,7 +129,7 @@ function depthOf(z: number, H: number): number {
   return H <= 1 ? 0 : z / (H - 1);
 }
 
-function index(s: SubstrateState, x: number, y: number, z: number): number {
+function index(s: ReadonlyState<SubstrateState>, x: number, y: number, z: number): number {
   return z * (s.W * s.D) + y * s.W + x;
 }
 
@@ -186,7 +187,7 @@ function drawBlock(
 // background → stack surface (nearest cell per column) → landing shadow
 // (uncovered columns) → falling piece (on top, bright).
 export function buildWellSurface(
-  s: SubstrateState,
+  s: ReadonlyState<SubstrateState>,
   glyphs: GlyphSet<Role>,
   ssx: number,
   ssy: number,
@@ -263,7 +264,7 @@ export function buildWellSurface(
 // deeper slices show through. The 3D read comes from CSS-scaling these flat
 // slices into a tunnel, not from any projection here.
 export function buildSliceSurface(
-  s: SubstrateState,
+  s: ReadonlyState<SubstrateState>,
   z: number,
   theme: ShaftTheme,
   ssx: number,

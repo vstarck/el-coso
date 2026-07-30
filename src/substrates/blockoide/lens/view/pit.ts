@@ -6,6 +6,7 @@
  * Extracted from the former `blockoide-pit` lens — render half only.
  */
 
+import type { ReadonlyState } from "@/lenses/types";
 import type { LensTunable, TunableValue } from "@/lenses/types";
 import {
   drawCube,
@@ -120,7 +121,7 @@ type CubeItem = { x: number; y: number; z: number; v: number; bright: boolean };
 
 function drawScene(
   ctx: CanvasRenderingContext2D,
-  s: SubstrateState,
+  s: ReadonlyState<SubstrateState>,
   cw: number,
   ch: number,
   tilt: number,
@@ -250,7 +251,7 @@ export function makePitView(
     return () => tunableListeners.delete(listener);
   }
 
-  function renderFrom(state: SubstrateState): void {
+  function renderFrom(state: ReadonlyState<SubstrateState>): void {
     ctx!.setTransform(dpr, 0, 0, dpr, 0, 0);
     drawScene(
       ctx!,

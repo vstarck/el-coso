@@ -15,6 +15,7 @@ import type {
   LensTunable,
   OutcomeBanner,
   TunableValue,
+  ReadonlyState,
 } from "@/lenses/types";
 import type { Params } from "@/lib/types";
 import { renderToPre } from "@/lib/ascii";
@@ -53,7 +54,7 @@ export type DeckHostHooks = {
 
 export type MountedDeck = {
   unmount(): void;
-  renderFrom(state: SubstrateState): void;
+  renderFrom(state: ReadonlyState<SubstrateState>): void;
   tick(): void;
   speedMult(): number;
   setSpeed(id: string): void;
@@ -227,7 +228,7 @@ export function mountDeck(
     overlay.replaceChildren(card);
     overlay.hidden = false;
   }
-  function showOutcome(s: SubstrateState): void {
+  function showOutcome(s: ReadonlyState<SubstrateState>): void {
     const banner = outcomeFor({ outcome: s.outcome, layers: s.layers });
     if (!banner) return;
     const card = document.createElement("div");
@@ -299,7 +300,7 @@ export function mountDeck(
   let last_next = -2;
   let last_outcome: BlockoideOutcome | "" = "";
 
-  function renderFrom(state: SubstrateState): void {
+  function renderFrom(state: ReadonlyState<SubstrateState>): void {
     view.renderFrom(state);
     syncTransport(); // cheap; keeps the play button in sync with external toggles
 
@@ -377,7 +378,7 @@ function mkButton(label: string, onClick: () => void): HTMLButtonElement {
 // how packed that layer is; the falling piece's z-span is marked bright.
 function buildAltimeter(H: number): {
   el: HTMLElement;
-  update(s: SubstrateState): void;
+  update(s: ReadonlyState<SubstrateState>): void;
 } {
   const el = document.createElement("div");
   el.className = "blk-deck-altimeter";
@@ -394,7 +395,7 @@ function buildAltimeter(H: number): {
   label.className = "blk-deck-alti-label";
   el.append(tube, label);
 
-  function update(s: SubstrateState): void {
+  function update(s: ReadonlyState<SubstrateState>): void {
     const area = s.W * s.D;
     const pieceZ = new Set<number>();
     if (s.piece_kind >= 0 && s.outcome === "in_progress") {
@@ -422,7 +423,7 @@ function buildAltimeter(H: number): {
 function buildStats(config: BlockoideConfig): {
   el: HTMLElement;
   next: HTMLPreElement;
-  update(s: SubstrateState): void;
+  update(s: ReadonlyState<SubstrateState>): void;
 } {
   const el = document.createElement("div");
   el.className = "blk-deck-stats";
@@ -441,7 +442,7 @@ function buildStats(config: BlockoideConfig): {
   next.className = "blk-deck-next";
   el.append(layers, pieces, size, hash, nextLabel, next);
 
-  function update(s: SubstrateState): void {
+  function update(s: ReadonlyState<SubstrateState>): void {
     const target = config.win_layers > 0 ? `/${config.win_layers}` : "";
     layers.textContent = `layers ${s.layers}${target}`;
     pieces.textContent = `pieces ${s.spawn_count}`;

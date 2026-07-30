@@ -104,6 +104,52 @@ export type HistoryAdapter<State, Input, CommitPayload> = {
 // introspection.
 export type TickedState = { tick: number };
 
+// Mutating members of a TypedArray. Omitting them is LOAD-BEARING, not
+// belt-and-braces: `Readonly<Float32Array>` is still assignable *back* to
+// `Float32Array` (TS does not check readonly index modifiers in
+// assignability), so a `Readonly`-only view leaves `ReadonlyState` vacuous.
+// Dropping these members is what makes the view non-assignable, and that is
+// what makes the read contract bite at all. Measured, not assumed.
+type TypedArrayMutators = "set" | "fill" | "copyWithin" | "sort" | "reverse";
+
+// A substrate state handed over for READING ONLY.
+//
+// Lenses receive the substrate's LIVE buffer, not a copy — the host calls
+// `renderFrom(history.substrate.read)` (`lib/lens-host/mount-host.ts`,
+// `app/components/canvas/SubstrateHost.tsx`). So a write there does not bounce
+// off a snapshot. `historyTick`'s auto-anchor keys on `(branch, tick)` ALONE
+// (`substrateAt` in `history.ts`), which means a write to any OTHER channel is
+// not detected, is never restored, and the next tick runs from it — then
+// keyframes it and replays it as though it were real. It is invisible to every
+// hash lock, because by the time the hash is taken the write IS the state.
+//
+// spec/13 phrased the rule as "does not mutate the history", which forbids the
+// wrong noun: the history LAYER is not the thing a lens can reach. The state
+// BUFFER is.
+//
+// Shape dispatch is uniformly recursive, mirroring `cloneField` rather than
+// enumerating state shapes — the S128 `number[][]` lesson.
+//
+// WHAT THIS CANNOT SAY (both measured, neither hypothetical):
+//  · A SCALAR-ONLY state is ungated. With no typed array, array or nested
+//    object to strip a member from, the view stays assignable back to the
+//    mutable state and an implementation annotated with the mutable type is
+//    accepted. TS does not consider `readonly` modifiers in assignability, so
+//    this is not expressible. Publicly that is tfps, julia and abismo.
+//    TRIGGER to revisit: a runtime write-detector around the render pass, or
+//    any of those three growing a channel.
+//  · A channel passed on to a helper whose parameter is typed mutable. This
+//    converts the ACCIDENTAL write into a compile error; it is not a proof.
+export type ReadonlyState<T> = T extends (...args: never[]) => unknown
+  ? T
+  : T extends ArrayBufferView
+    ? Readonly<Omit<T, TypedArrayMutators>>
+    : T extends ReadonlyArray<infer U>
+      ? ReadonlyArray<ReadonlyState<U>>
+      : T extends object
+        ? { readonly [K in keyof T]: ReadonlyState<T[K]> }
+        : T;
+
 // One branch segment in the tree. Inputs / commits / keyframes all cover
 // the half-open range (fork_tick, head_tick]; on the root branch the range
 // is (0, head_tick] with a tick-0 root keyframe.

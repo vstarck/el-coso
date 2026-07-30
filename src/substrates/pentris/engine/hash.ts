@@ -9,6 +9,7 @@
 // session's worth of commits; equal hashes are still a claim to verify
 // against full state, never a proof (a short digest can collide).
 
+import type { ReadonlyState } from "@/history";
 import type { SubstrateState } from "./types";
 
 const OUTCOME_CODE: Record<string, number> = {
@@ -17,7 +18,7 @@ const OUTCOME_CODE: Record<string, number> = {
   lost: 2,
 };
 
-export function hashState(s: SubstrateState): string {
+export function hashState(s: ReadonlyState<SubstrateState>): string {
   let h = 0x811c9dc5;
   for (let i = 0; i < s.cells.length; i++) {
     h ^= s.cells[i] ?? 0;

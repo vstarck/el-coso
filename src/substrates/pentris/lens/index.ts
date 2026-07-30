@@ -51,6 +51,7 @@ import type {
   MountedLens,
   OutcomeBanner,
   TunableValue,
+  ReadonlyState,
 } from "@/lenses/types";
 import type {
   PentrisCommitPayload,
@@ -396,7 +397,7 @@ function mountPentris(
     };
   }
 
-  function drawTree(state: SubstrateState): void {
+  function drawTree(state: ReadonlyState<SubstrateState>): void {
     const version = host.getHistoryVersion();
     if (!cached_view || version !== cached_version) {
       cached_view = windowLanes(buildView(history), RECENT_LANES);
@@ -469,7 +470,7 @@ function mountPentris(
     return lens_state.palette === "geometry" ? "geometry" : "vivid";
   }
 
-  function renderFrom(state: SubstrateState): void {
+  function renderFrom(state: ReadonlyState<SubstrateState>): void {
     drawBoard(board_ctx, state, {
       cell_px: CELL_PX,
       show_ghost: lens_state.show_ghost === "true",
@@ -491,7 +492,7 @@ function mountPentris(
     }
   }
 
-  function renderThumbnail(state: SubstrateState, target: HTMLCanvasElement): void {
+  function renderThumbnail(state: ReadonlyState<SubstrateState>, target: HTMLCanvasElement): void {
     const tctx = target.getContext("2d");
     if (!tctx) return;
     const cell_px = Math.max(

@@ -34,6 +34,7 @@ import type {
   MountedLens,
   TunableValue,
   ViewportInset,
+  ReadonlyState,
 } from "@/lenses/types";
 import { drawExampleFrame } from "./render";
 
@@ -164,7 +165,7 @@ function mountExample(
     }
   }
 
-  function renderFrom(state: SubstrateState): void {
+  function renderFrom(state: ReadonlyState<SubstrateState>): void {
     drawExampleFrame(state, ctx as CanvasRenderingContext2D, {
       cell_px: CELL_PX,
       pan,
@@ -173,7 +174,7 @@ function mountExample(
     });
   }
 
-  function renderThumbnail(state: SubstrateState, target: HTMLCanvasElement): void {
+  function renderThumbnail(state: ReadonlyState<SubstrateState>, target: HTMLCanvasElement): void {
     const tctx = target.getContext("2d");
     if (!tctx) return;
     const cell_px = Math.max(

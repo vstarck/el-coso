@@ -10,6 +10,7 @@
  * renders; input + the tick loop now live in the deck's controller.
  */
 
+import type { ReadonlyState } from "@/lenses/types";
 import { renderToPre } from "@/lib/ascii";
 import type { LensTunable, TunableValue } from "@/lenses/types";
 import type { BlockoideConfig, SubstrateState } from "../../engine";
@@ -191,7 +192,7 @@ export function makeShaftView(
     return () => tunableListeners.delete(listener);
   }
 
-  function renderFrom(state: SubstrateState): void {
+  function renderFrom(state: ReadonlyState<SubstrateState>): void {
     const th = theme();
     for (let z = 0; z < H; z++) {
       renderToPre(buildSliceSurface(state, z, th, SS_X, SS_Y), slices[z]!);

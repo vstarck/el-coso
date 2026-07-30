@@ -4,6 +4,7 @@
  * rows. Pieces are told apart by their letter glyph (not color); the whole
  * readout renders in a single themable color. */
 
+import type { ReadonlyState } from "@/lenses/types";
 import type { SubstrateState } from "../engine";
 import { PIECE_NAMES, pieceCells } from "../engine";
 
@@ -12,7 +13,7 @@ const EMPTY = ".";
 // One glyph per board cell: a settled cell shows the letter of the piece
 // that locked there, the falling piece overlays its own letter, empty cells
 // are '.'. Returns one string per row.
-export function boardRows(s: SubstrateState): string[] {
+export function boardRows(s: ReadonlyState<SubstrateState>): string[] {
   const W = s.W;
   const H = s.H;
   const grid: string[][] = [];
@@ -55,7 +56,7 @@ export type TtsView = {
   board: string[];
 };
 
-const computeStatus = (s: SubstrateState, flags: LensFlags): string => {
+const computeStatus = (s: ReadonlyState<SubstrateState>, flags: LensFlags): string => {
   return s.outcome === "lost"
     ? "topped out"
     : s.outcome === "won"
@@ -66,7 +67,7 @@ const computeStatus = (s: SubstrateState, flags: LensFlags): string => {
 };
 
 export function stateView(
-  s: SubstrateState,
+  s: ReadonlyState<SubstrateState>,
   flags: LensFlags = { auto: false, paused: false },
 ): TtsView {
   // The run state folds the pause flag in — a deliberate `pause` reads as
@@ -86,6 +87,6 @@ export function stateView(
 // The terminal readout: the state view, pretty-printed. The board's row
 // strings line their columns up under 2-space indentation, which is exactly
 // the grid the player reads.
-export function renderJson(s: SubstrateState, flags?: LensFlags): string {
+export function renderJson(s: ReadonlyState<SubstrateState>, flags?: LensFlags): string {
   return JSON.stringify(stateView(s, flags), null, 2);
 }

@@ -107,8 +107,14 @@ tick and playing different inputs forks a new branch; truncating a branch
 A **lens** is a view of a world *and* the way you act on it. One world can
 have several. A lens owns three things:
 
-- **A forward render.** `renderFrom(state)` draws a given state. It is pure:
-  it does not advance time or touch history, and it runs once per frame.
+- **A forward render.** `renderFrom(state)` draws a given state, once per
+  frame. It is pure in a specific sense worth stating, because the `state` it
+  receives is the substrate's **live buffer, not a copy**: it does not advance
+  time, and it does not write to `state`. A write there is not discarded — it
+  lands in the trajectory, gets keyframed, and replays. The type enforces it
+  (`renderFrom` takes `ReadonlyState<State>`), with one gap it cannot close: a
+  state made only of scalars is not gated, because TypeScript ignores
+  `readonly` modifiers when checking assignability.
 - **The cadence.** A lens that drives a real-time world supplies a `tick`
   and a speed; a turn-based lens omits `tick` and steps only on input. Same
   substrate, different felt time — the choice lives here, not in the engine.

@@ -17,6 +17,7 @@ import type {
   LensMountArgs,
   MountedLens,
   ViewportInset,
+  ReadonlyState,
 } from "@/lenses/types";
 import type {
   DvdCommitPayload,
@@ -34,7 +35,7 @@ import {
 } from "./shared";
 
 export type ProjectionStrategy = (
-  state: SubstrateState,
+  state: ReadonlyState<SubstrateState>,
   config: DvdConfig,
   horizon: number,
 ) => Array<{ x: number; y: number }>;
@@ -103,7 +104,7 @@ function mountProjection(
   let visible = true;
   const strategy: ProjectionStrategy = naiveBallistic;
 
-  function renderFrom(state: SubstrateState): void {
+  function renderFrom(state: ReadonlyState<SubstrateState>): void {
     const c = ctx!;
     c.clearRect(0, 0, canvas.width, canvas.height);
     if (!visible) return;

@@ -2,6 +2,7 @@
  * is drawn as filled accent cells, the live head a brighter square, and a
  * SAFE_AREA HUD reads the survival progress. Crash dims the trail. */
 
+import type { ReadonlyState } from "@/lenses/types";
 import type { SubstrateState } from "../engine";
 
 export type TronRenderOpts = {
@@ -26,7 +27,7 @@ function ownerColor(owner: number, accent: string): string {
 }
 
 export function drawTronFrame(
-  state: SubstrateState,
+  state: ReadonlyState<SubstrateState>,
   ctx: CanvasRenderingContext2D,
   opts: TronRenderOpts,
 ): void {

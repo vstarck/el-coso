@@ -4,6 +4,7 @@
 //   spawn next. Pure and rng-threaded: piece draws are the only stochastic
 //   step.
 
+import type { ReadonlyState } from "@/history";
 import type { RNGState } from "@/engine/types";
 import { nextRange } from "@/engine/rng";
 import type { BlockoideConfig } from "./config";
@@ -16,7 +17,7 @@ import {
   type Axis,
 } from "./pieces";
 
-function idx(s: SubstrateState, x: number, y: number, z: number): number {
+function idx(s: ReadonlyState<SubstrateState>, x: number, y: number, z: number): number {
   return z * (s.W * s.D) + y * s.W + x;
 }
 
@@ -24,7 +25,7 @@ function idx(s: SubstrateState, x: number, y: number, z: number): number {
 // walls, the floor, or an occupied cell (settled block or obstacle)? Cells
 // above the opening (z < 0) are legal — pieces enter from there.
 export function collides(
-  s: SubstrateState,
+  s: ReadonlyState<SubstrateState>,
   kind: number,
   orient: number,
   px: number,
@@ -46,7 +47,7 @@ export function collides(
 // engine's hard drop, the autopilot's placement search, and the lens
 // ghost/landing renders — same drop-to-rest in one place.
 export function landingZ(
-  s: SubstrateState,
+  s: ReadonlyState<SubstrateState>,
   kind: number,
   orient: number,
   px: number,
@@ -83,7 +84,7 @@ function spawn(w: SubstrateState, kind: number): void {
 // (an all-wall layer is "full" but has nothing to clear). Walls satisfy a
 // layer — the obstacle is helper-and-constraint at once. Exported for
 // tests (the collapse rule is the substrate's subtlest invariant).
-export function layerComplete(s: SubstrateState, z: number): boolean {
+export function layerComplete(s: ReadonlyState<SubstrateState>, z: number): boolean {
   let hasPiece = false;
   for (let y = 0; y < s.D; y++) {
     for (let x = 0; x < s.W; x++) {

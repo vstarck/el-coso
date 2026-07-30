@@ -12,6 +12,7 @@ import type {
   LensMountArgs,
   MountedLens,
   ViewportInset,
+  ReadonlyState,
 } from "@/lenses/types";
 import type {
   DvdCommitPayload,
@@ -60,7 +61,7 @@ function mountJitter(
   const kicks: Array<{ x: number; y: number }> = [];
   let last_tick = -1;
 
-  function renderFrom(state: SubstrateState): void {
+  function renderFrom(state: ReadonlyState<SubstrateState>): void {
     const c = ctx!;
     c.clearRect(0, 0, canvas.width, canvas.height);
     if (!visible) return;

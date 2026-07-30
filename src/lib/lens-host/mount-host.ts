@@ -16,6 +16,7 @@ import {
   chromeAppliesPerspective,
   hasFeature,
   type Lens,
+  type ReadonlyState,
   type RenderSize,
   type ViewportInset,
 } from "@/lenses/types";
@@ -227,7 +228,13 @@ export function mountHost<State extends TickedState, Config, Input, CommitPayloa
   const fpsHud: FpsHud | null = fpsHudEnabledFromEnv() ? makeFpsHud(outer) : null;
   const loop = attachRafLoopCore({
     render: () => {
-      const state = history.substrate.read;
+      // The host OWNS the mutable buffer and hands lenses a read-only view of
+      // it. `ReadonlyState<State>` is a conditional type over an unresolved
+      // generic, so tsc cannot verify `State → ReadonlyState<State>` here even
+      // though it holds for every concrete State; this is the one boundary
+      // where that narrowing is asserted, deliberately, rather than leaked
+      // into the lens contract.
+      const state = history.substrate.read as ReadonlyState<State>;
       for (const m of tree.all) m.renderFrom(state);
     },
     ...(tree.root.tick ? { tick: tree.root.tick } : {}),

@@ -17,6 +17,7 @@ import type {
   LensTunable,
   MountedLens,
   ViewportInset,
+  ReadonlyState,
 } from "@/lenses/types";
 import type {
   DvdCommitPayload,
@@ -116,7 +117,7 @@ export function mountSpace(
   let last_trail_tick = -1;
   let speed_mult = ROOT_SPEEDS.find((s) => s.isDefault)?.mult ?? 1;
 
-  function renderFrom(state: SubstrateState): void {
+  function renderFrom(state: ReadonlyState<SubstrateState>): void {
     const c = ctx as CanvasRenderingContext2D;
     c.fillStyle = PALETTE.bg;
     c.fillRect(0, 0, canvas.width, canvas.height);
