@@ -17,6 +17,23 @@ import type { EmbedConfig } from "@/embed/mount-substrate";
 
 export const COSO_PROTOCOL = "coso/v1";
 
+/** ★ Capabilities a guest ADVERTISES about itself (spec/25 §12.2c).
+ *
+ *  Every exported `guest.html` INLINES this runtime, so a published embed
+ *  carries a frozen copy of this protocol and cannot be fixed by rebuilding.
+ *  A host must therefore never infer what a guest can do from its substrate
+ *  id, its manifest, or the mere fact that it answered — it asks, and an old
+ *  guest that says nothing is treated as saying "no".
+ *
+ *  ★ THIS IS WHY THE VERSION IS NOT BUMPED. `isEnvelope` gates on strict
+ *  equality of `proto`, so a `coso/v2` would make old guests and new hosts
+ *  ignore each other in SILENCE — the one deliberate silent drop in this
+ *  protocol is aimed at foreign frames, and version skew between our own
+ *  artifacts would inherit it. Additive change + advertised capability keeps
+ *  an un-redeployed embed working with reduced capability instead of dead. */
+export const PROTOCOL_FEATURES = ["await_commands"] as const;
+export type ProtocolFeature = (typeof PROTOCOL_FEATURES)[number];
+
 // A tunable as advertised to the host at mount (subset of the lens's LensTunable).
 export type TunableManifest = {
   path: string[];
@@ -51,6 +68,9 @@ export type UpMessage =
       playing: boolean;
       tunables: TunableManifest[];
       commands: EmbedCommandSpec[];
+      // What this guest can do beyond the original coso/v1 surface. ABSENT ⇒ a
+      // guest built before spec/25 §12 — the host must degrade, not assume.
+      features?: string[];
     }
   // Live host-relevant state, pushed whenever play-state OR any declared tunable
   // changes (incl. from inside the substrate — a console toggle, player takeover).
@@ -63,6 +83,11 @@ export type UpMessage =
       tick?: number;
       tunables: Record<string, TunableValue>;
     }
+  // A command finished. Correlated by `requestId`; `value` is the lens's
+  // returned string, if it returned one. Sent for BOTH sync and async
+  // commands, so a host never has to know which it asked for. A failure is
+  // reported as `error` with the same `requestId` — the two are exclusive.
+  | { kind: "result"; requestId: string; value?: string }
   | { kind: "error"; message: string; requestId?: string };
 
 export type Direction = "down" | "up";

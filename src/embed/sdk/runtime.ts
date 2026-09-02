@@ -20,6 +20,7 @@ import type { LensTunable, TunableValue } from "@/lenses/types";
 import {
   isEnvelope,
   makeEnvelope,
+  PROTOCOL_FEATURES,
   type DownMessage,
   type TunableManifest,
   type UpMessage,
@@ -125,6 +126,7 @@ export function startEmbedGuest(): void {
       playing: lastPlaying,
       tunables: tunableManifest(d.tunables),
       commands: d.commands.slice(),
+      features: [...PROTOCOL_FEATURES],
     });
     postState(); // initial values, right after the manifest
     // Push instantly when the substrate changes a tunable itself (console toggle,
@@ -174,13 +176,40 @@ export function startEmbedGuest(): void {
         return;
       case "command":
         withHandle(msg, (h) => {
-          try {
-            h.command(msg.name, ...msg.args);
-          } catch (e) {
+          const { requestId } = msg;
+          const failed = (e: unknown): void =>
             fail(
               `command "${msg.name}" failed: ${e instanceof Error ? e.message : String(e)}`,
-              msg.requestId,
+              requestId,
             );
+          // ★ A LENS MAY RETURN A PROMISE (spec/25 §12.2e). The previous shape
+          // wrapped only the SYNCHRONOUS call in try/catch, so an async command
+          // that rejected AFTER returning escaped as an unhandled rejection —
+          // invisible to the host AND to this frame's error channel. Both paths
+          // funnel through `failed` now.
+          let out: unknown;
+          try {
+            out = h.command(msg.name, ...msg.args);
+          } catch (e) {
+            failed(e);
+            return;
+          }
+          // Reply for SYNC commands too, so a host never needs to know which
+          // kind it asked for. No requestId ⇒ the caller is not awaiting (an
+          // old conductor): stay silent rather than post an uncorrelatable
+          // `result` that an old host would surface as an unknown-kind error.
+          const done = (value: unknown): void => {
+            if (requestId === undefined) return;
+            post(
+              typeof value === "string"
+                ? { kind: "result", requestId, value }
+                : { kind: "result", requestId },
+            );
+          };
+          if (typeof (out as { then?: unknown } | undefined)?.then === "function") {
+            void (out as Promise<unknown>).then(done, failed);
+          } else {
+            done(out);
           }
         });
         return;

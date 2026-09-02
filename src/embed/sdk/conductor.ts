@@ -45,7 +45,20 @@ export type EmbedSpec = {
   autoplay?: boolean;
 };
 
-export type EmbedEvent = "ready" | "state" | "error";
+export type EmbedEvent = "ready" | "state" | "error" | "result";
+
+/** How long an awaited command may take before the promise rejects.
+ *
+ *  ★ A CAPABILITY FLAG IS A CLAIM. `mounted.features` is a string a guest
+ *  asserts about ITSELF, so `await_commands` being present is not evidence the
+ *  guest will actually reply — a wedged lens, a thrown-away promise or a bug
+ *  produce the same silence as an old build. The feature check makes the common
+ *  case correct; this makes its failure survivable. There is no other unbounded
+ *  wait in this SDK and there must not be one (spec/25 §12.3).
+ *
+ *  Generous on purpose: the first consumer is rgba's `record`, which renders a
+ *  full animation before it resolves. */
+export const COMMAND_TIMEOUT_MS = 120_000;
 
 export type EmbedRemote = {
   readonly el: HTMLIFrameElement;
@@ -56,7 +69,14 @@ export type EmbedRemote = {
   reset(): void;
   setLoop(on: boolean): void;
   setTunable(path: string | string[], value: TunableValue): void;
-  command(name: string, ...args: unknown[]): void;
+  /** Dispatch a substrate command. Resolves with the lens's returned string (if
+   *  any) once the command has finished — see spec/25 §12.
+   *
+   *  ★ Against a guest that predates §12 this resolves `undefined` PROMPTLY
+   *  rather than hanging: deployed embeds inline a frozen runtime and cannot
+   *  reply, and the capability is read from `mounted.features`. Rejects if the
+   *  command throws, or on timeout. */
+  command(name: string, ...args: unknown[]): Promise<string | undefined>;
   /** Last known play state (from `state`/`mounted` events; false until mounted). */
   isPlaying(): boolean;
   /** Last known tunable values, keyed by dotted path (from `state`; `{}` until
@@ -112,6 +132,10 @@ export function createConductor(opts: ConductorOptions): Conductor {
   let policy = readPersisted(persistKey) ?? opts.autoplay?.default ?? true;
 
   const remotes: RemoteImpl[] = [];
+  // Monotonic across the conductor, not per-embed: a requestId is only ever
+  // matched inside the remote that issued it, but a globally unique id keeps
+  // any cross-embed mix-up unrepresentable rather than merely unlikely.
+  let requestSeq = 0;
   const changeListeners = new Set<(on: boolean) => void>();
 
   type RemoteImpl = EmbedRemote & {
@@ -123,6 +147,8 @@ export function createConductor(opts: ConductorOptions): Conductor {
     _lastPlaying: boolean;
     _lastTunables: Record<string, TunableValue>;
     _manifest: { lens: string; tunables: TunableManifest[]; commands: EmbedCommandSpec[] } | null;
+    _features: string[] | null; // null ⇒ not mounted yet; [] ⇒ mounted, pre-§12 guest
+    _pending: Map<string, { resolve(v: string | undefined): void; reject(e: Error): void; timer: ReturnType<typeof setTimeout> }>;
     _listeners: Record<EmbedEvent, Set<(d: unknown) => void>>;
     _receive(msg: UpMessage): void;
   };
@@ -144,7 +170,12 @@ export function createConductor(opts: ConductorOptions): Conductor {
   function makeRemote(el: HTMLIFrameElement, spec: EmbedSpec, token: string): RemoteImpl {
     const pinned = spec.autoplay !== undefined;
     const effective = pinned ? (spec.autoplay as boolean) : policy;
-    const listeners: RemoteImpl["_listeners"] = { ready: new Set(), state: new Set(), error: new Set() };
+    const listeners: RemoteImpl["_listeners"] = {
+      ready: new Set(),
+      state: new Set(),
+      error: new Set(),
+      result: new Set(),
+    };
 
     function rawSend(msg: DownMessage): void {
       el.contentWindow?.postMessage(makeEnvelope("down", msg, token), origin);
@@ -173,6 +204,8 @@ export function createConductor(opts: ConductorOptions): Conductor {
       _lastPlaying: false,
       _lastTunables: {},
       _manifest: null,
+      _features: null,
+      _pending: new Map(),
       _listeners: listeners,
       play: () => send({ kind: "play" }),
       pause: () => send({ kind: "pause" }),
@@ -181,7 +214,35 @@ export function createConductor(opts: ConductorOptions): Conductor {
       setLoop: (on) => send({ kind: "set_loop", on }),
       setTunable: (path, value) =>
         send({ kind: "set_tunable", path: Array.isArray(path) ? path : [path], value }),
-      command: (name, ...args) => send({ kind: "command", name, args }),
+      command: (name, ...args) => {
+        // ★ A guest that predates spec/25 §12 CANNOT reply. It is also the
+        // COMMON case — a deployed embed inlines a frozen runtime, so it is old
+        // by definition. Awaiting it would hang forever (there was no timeout
+        // anywhere in this SDK before §12), so the command is sent
+        // fire-and-forget exactly as before and the promise resolves at once.
+        // Not an error: the command really was delivered and really will run;
+        // what is unavailable is the completion signal, and saying so by
+        // resolving `undefined` is more honest than a rejection.
+        const canAwait = remote._features?.includes("await_commands") ?? false;
+        if (!canAwait) {
+          send({ kind: "command", name, args });
+          return Promise.resolve(undefined);
+        }
+        const requestId = `c${++requestSeq}`;
+        return new Promise<string | undefined>((resolve, reject) => {
+          const timer = setTimeout(() => {
+            remote._pending.delete(requestId);
+            reject(
+              new Error(
+                `command "${name}" did not report back within ${COMMAND_TIMEOUT_MS} ms — ` +
+                  "the guest advertised `await_commands` but never sent a result",
+              ),
+            );
+          }, COMMAND_TIMEOUT_MS);
+          remote._pending.set(requestId, { resolve, reject, timer });
+          send({ kind: "command", name, args, requestId });
+        });
+      },
       isPlaying: () => remote._lastPlaying,
       tunables: () => remote._lastTunables,
       describe: () => remote._manifest,
@@ -193,6 +254,13 @@ export function createConductor(opts: ConductorOptions): Conductor {
         const i = remotes.indexOf(remote);
         if (i >= 0) remotes.splice(i, 1);
         if (el.parentNode) el.parentNode.removeChild(el);
+        // Never leave a caller awaiting a frame that no longer exists, and never
+        // leak a timer past the object that owns it.
+        for (const [, p] of remote._pending) {
+          clearTimeout(p.timer);
+          p.reject(new Error("embed destroyed before the command reported back"));
+        }
+        remote._pending.clear();
       },
       _receive: (msg) => {
         switch (msg.kind) {
@@ -209,6 +277,8 @@ export function createConductor(opts: ConductorOptions): Conductor {
           case "mounted": {
             remote._lastPlaying = msg.playing;
             remote._manifest = { lens: msg.lens, tunables: msg.tunables, commands: msg.commands };
+            // ASKED, never inferred. Absent ⇒ a guest built before spec/25 §12.
+            remote._features = msg.features ? [...msg.features] : [];
             // Correct for any policy drift since the iframe was created (the lazy
             // case): re-assert the current effective autoplay.
             rawSend({ kind: "autoplay", on: remote._effective });
@@ -220,9 +290,30 @@ export function createConductor(opts: ConductorOptions): Conductor {
             remote._lastTunables = msg.tunables;
             emit("state", { playing: msg.playing, tick: msg.tick, tunables: msg.tunables });
             return;
-          case "error":
+          case "result": {
+            const p = remote._pending.get(msg.requestId);
+            if (p) {
+              remote._pending.delete(msg.requestId);
+              clearTimeout(p.timer);
+              p.resolve(msg.value);
+            }
+            emit("result", { requestId: msg.requestId, value: msg.value });
+            return;
+          }
+          case "error": {
+            // A correlated error settles the awaiting caller; an uncorrelated
+            // one is still emitted, never dropped.
+            if (msg.requestId !== undefined) {
+              const p = remote._pending.get(msg.requestId);
+              if (p) {
+                remote._pending.delete(msg.requestId);
+                clearTimeout(p.timer);
+                p.reject(new Error(msg.message));
+              }
+            }
             emit("error", { message: msg.message, requestId: msg.requestId });
             return;
+          }
           default:
             emit("error", { message: `unknown up-message: ${String((msg as { kind?: unknown }).kind)}` });
         }
