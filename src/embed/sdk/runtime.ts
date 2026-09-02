@@ -212,13 +212,37 @@ export function startEmbedGuest(): void {
     }
   }
 
-  const script = document.createElement("script");
-  script.src = bundle;
-  script.onload = () => {
+  const announceReady = (): void => {
     bundleReady = true;
     post({ kind: "ready", substrate }); // tells a conductor to send `init`
     tryMount(); // no-op unless we already have a config (?c)
   };
+
+  // ★ A PRE-BAKED GLOBAL WINS OVER A BUNDLE URL. A self-contained guest page
+  // inlines its substrate above this runtime, so the global is already here and
+  // there is nothing to fetch — announce ready at once. The check comes BEFORE
+  // `?b` because a conductor always sends one (it cannot know the guest is
+  // pre-baked), and injecting it would fetch a bundle that need not exist.
+  // Never silent in either direction: taking this path with a `?b` present says
+  // so, and arriving with neither a global nor a bundle is an error, not a
+  // quiet no-op (it used to set `script.src = "null"` and report a load failure
+  // about a URL nobody wrote).
+  const prebaked = (window as unknown as Record<string, GuestGlobal | undefined>)[globalName];
+  if (typeof prebaked?.mount === "function") {
+    if (bundle !== null) {
+      console.info(`[coso-embed] global "${globalName}" is already present — ignoring bundle ${bundle}`);
+    }
+    announceReady();
+    return;
+  }
+  if (bundle === null) {
+    fail(`no bundle URL (?b) and no pre-baked global "${globalName}" with mount() — nothing to run`);
+    return;
+  }
+
+  const script = document.createElement("script");
+  script.src = bundle;
+  script.onload = announceReady;
   script.onerror = () => fail(`failed to load bundle: ${bundle}`);
   document.head.appendChild(script);
 }
