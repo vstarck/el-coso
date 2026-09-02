@@ -230,7 +230,17 @@ export function mountSubstrate(
     describe: () => ({
       lens: lensId,
       tunables: lens.tunables,
-      commands: lens.commands ?? [],
+      // ★ THE LIVE SET WINS. `MountedLens.commands?()` is the command surface
+      // as it is RIGHT NOW — and since it can mark a command
+      // `available: false` with a reason, reading the static declaration here
+      // meant an embed host could never learn that a command it can see is not
+      // runnable. Measured (S194): a lens reporting `record` unavailable still
+      // produced an enabled button in the reference lab, because this line
+      // handed over the static array.
+      //
+      // The static list stays the fallback for a lens that declares no live
+      // set, so nothing that worked before changes.
+      commands: mounted.tree.root.commands?.() ?? lens.commands ?? [],
     }),
   };
 }

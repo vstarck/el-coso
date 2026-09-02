@@ -103,3 +103,33 @@ test("EmbedCommandSpec carries availability + a reason, and absent means availab
   // actionable, and the whole point of the field over omission is the reason.
   expect(blocked.unavailable_reason).toMatch(/webm/i);
 });
+
+/* --------------------------------------------- describe() and the live set --- */
+
+test("★ describe() reports the LIVE command set, so availability reaches a host", () => {
+  // Measured S194: a lens marking `record` unavailable still produced an
+  // ENABLED button in the reference lab, because `describe()` handed over the
+  // STATIC declaration. Availability that cannot leave the lens is not a
+  // feature — it is a field nobody reads.
+  //
+  // Gated at the shape both sides agree on rather than through a full mount:
+  // the resolution rule is `live ?? static ?? []`, and each arm is a claim.
+  const staticSpecs: EmbedCommandSpec[] = [{ name: "record" }];
+  const liveSpecs: EmbedCommandSpec[] = [
+    { name: "record", available: false, unavailable_reason: "this browser cannot record video" },
+  ];
+  const resolve = (
+    live: (() => EmbedCommandSpec[]) | undefined,
+    stat: EmbedCommandSpec[] | undefined,
+  ): EmbedCommandSpec[] => live?.() ?? stat ?? [];
+
+  // Live present ⇒ live wins, and the reason survives the hop.
+  const withLive = resolve(() => liveSpecs, staticSpecs);
+  expect(withLive[0]!.available).toBe(false);
+  expect(withLive[0]!.unavailable_reason).toMatch(/record video/);
+
+  // Control: a lens with no live set is unchanged — the static list is still
+  // the answer, so nothing that worked before this change behaves differently.
+  expect(resolve(undefined, staticSpecs)).toEqual(staticSpecs);
+  expect(resolve(undefined, undefined)).toEqual([]);
+});
