@@ -75,6 +75,23 @@ export type EmbedCommandSpec = {
   label?: string;
   // Positional arg hints for a generated control; dispatch passes them through.
   args?: ReadonlyArray<{ name: string; type: "number" | "string" | "bool" }>;
+  // ★ DECLARED BUT NOT RUNNABLE RIGHT NOW. Absent ⇒ available; every existing
+  // caller is unchanged. A host renders the control DISABLED and shows the
+  // reason, rather than hiding it.
+  //
+  // `MountedLens.commands?()` can already express unavailability by OMITTING a
+  // command, and its comment says as much — but omission loses the *reason*, and
+  // a control that vanished is indistinguishable from a bug: the person who
+  // would report it has nothing to report. This is never-fail-silently at the
+  // UI tier.
+  //
+  // The lens owns this because the host cannot derive it: browser capability
+  // (`MediaRecorder.isTypeSupported`, a canvas API) is lens knowledge, and a
+  // host probing it would duplicate the mechanism in the tier that does not own
+  // it. Name WHICH leg failed — "unavailable" is not actionable, "this browser
+  // cannot record WebM" is.
+  available?: boolean;
+  unavailable_reason?: string;
 };
 
 // What kind of element the lens renders into. Spec/15. Drives a handful of
@@ -164,7 +181,11 @@ export type MountedLens<State extends TickedState> = {
   // A returned string is printed to the terminal under the command echo (spec/26
   // — the same convention as the built-ins); return nothing for a silent command.
   // The cross-frame SDK path is fire-and-forget and ignores the return.
-  command?: (name: string, args: unknown[]) => string | void;
+  // A PROMISE is allowed (spec/25 §12.2e): a command may take seconds — an
+  // export, a render — and both the console and the embed host await the result
+  // before printing or reporting it. Existing synchronous lenses satisfy the
+  // wider type unchanged.
+  command?: (name: string, args: unknown[]) => string | void | Promise<string | void>;
   // The LIVE command set available right now (spec/26 — "ask, don't read"
   // applied to commands). Absent ⇒ the static `Lens.commands` is the set.
   // Present ⇒ the console reads THIS for help / completion / dispatch, so a

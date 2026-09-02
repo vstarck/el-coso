@@ -222,7 +222,9 @@ export function buildConsoleRegistry<S extends TickedState, C, I, P>(
     return [...keptBuiltins, ...substrate];
   }
 
-  function dispatch(name: string, args: unknown[]): string | void {
+  // A substrate command may return a PROMISE (spec/25 §12.2e); built-ins never
+  // do. The shell awaits whatever comes back before printing it.
+  function dispatch(name: string, args: unknown[]): string | void | Promise<string | void> {
     // The substrate overrides a built-in of the same name; its own commands are
     // never wrapped by the interceptor (it owns them).
     if (substrateCommands().some((c) => c.name === name)) {

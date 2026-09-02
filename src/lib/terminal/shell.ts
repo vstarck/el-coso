@@ -42,7 +42,11 @@ export type CommandSource = {
   list(): ReadonlyArray<CommandDescriptor>;
   // Run a parsed, type-coerced command. Return text to print under the echo;
   // throw to print an `error: …` line. Owns built-in-vs-substrate routing.
-  dispatch(name: string, args: unknown[]): string | void;
+  //
+  // May return a PROMISE (spec/25 §12.2e) — a substrate command can take
+  // seconds. The shell prints the RESOLVED value, and a rejection prints the
+  // same `error: …` line a synchronous throw does.
+  dispatch(name: string, args: unknown[]): string | void | Promise<string | void>;
 };
 
 // ── Input (abstract) ─────────────────────────────────────────────────────────
@@ -258,9 +262,27 @@ export function createShell(opts: ShellOptions): Shell {
       emit();
       return;
     }
+    const printErr = (err: unknown): void => {
+      pushLine(`error: ${err instanceof Error ? err.message : String(err)}`, "error");
+      emit();
+    };
     try {
       const result = source.dispatch(name!, coerceArgs(spec, tokens));
-      if (typeof result === "string") pushLine(result);
+      // ★ A PROMISE MUST BE AWAITED, NOT PRINTED. `typeof result === "string"`
+      // is false for a promise, so an un-awaited async command would print
+      // NOTHING and look like a silent no-op — and a rejection after the
+      // synchronous try block would escape as an unhandled rejection, past the
+      // catch that exists to turn it into an `error:` line.
+      if (typeof (result as { then?: unknown } | undefined)?.then === "function") {
+        void (result as Promise<string | void>).then((value) => {
+          // A late line still has to reach the screen: the synchronous `emit()`
+          // below has already run, so this one is what re-renders.
+          if (typeof value === "string") pushLine(value);
+          emit();
+        }, printErr);
+      } else if (typeof result === "string") {
+        pushLine(result);
+      }
     } catch (err) {
       pushLine(`error: ${err instanceof Error ? err.message : String(err)}`, "error");
     }

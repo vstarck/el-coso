@@ -103,7 +103,7 @@ export type EmbedHandle = {
   /** Dispatch a substrate-specific named command (spec/25). THROWS if the lens
    *  declares no command surface or rejects the name — never a silent no-op, so
    *  the caller / SDK can surface it. */
-  command(name: string, ...args: unknown[]): void;
+  command(name: string, ...args: unknown[]): string | void | Promise<string | void>;
   /** Discovery manifest for the embed SDK: the mounted lens id + its declared
    *  tunables and commands. */
   describe(): {
@@ -220,7 +220,12 @@ export function mountSubstrate(
           `embed: lens "${lensId}" declares no command surface (command "${name}" rejected)`,
         );
       }
-      dispatch(name, args); // the lens throws on an unknown name; we let it propagate
+      // ★ RETURN what the lens returned. This used to discard it, so a command's
+      // reply reached nobody: the console got its text from the registry
+      // directly, but every EMBED path — the coso/v1 `result` message included —
+      // saw `undefined` no matter what the lens said. A promise would have been
+      // dropped here too, taking its rejection with it.
+      return dispatch(name, args); // the lens throws on an unknown name; we let it propagate
     },
     describe: () => ({
       lens: lensId,
