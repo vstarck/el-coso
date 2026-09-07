@@ -12,10 +12,12 @@
    to stage edits before flushing to history.config. */
 
 import { Settings, X } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { session } from "@/app/session";
 import { useStore } from "@/app/store";
 import type { LensTunable, TunableValue } from "@/lenses/types";
+import { buildDump, planApply } from "./config-io";
+import { enumDisplay } from "./enum-display";
 
 export function RulesRail({ onClose }: { onClose?: () => void }) {
   // Re-render when the lens (re)mounts. session.mounted_lens isn't in
@@ -49,61 +51,159 @@ export function RulesRail({ onClose }: { onClose?: () => void }) {
     groups[idx]!.items.push(t);
   }
 
+  /* ⚠ ONE LIST, COUNTED ONCE. The menu and the "all hidden" notice are two readouts of
+   * the same quantity, and the first draft derived them from two different sets — the
+   * menu included the config pseudo-group and the notice did not, so a fresh rail
+   * announced "groups 0/3" beside "2 groups hidden". Two numbers naming one population,
+   * on screen, at the same time. */
+  const allGroups = [CONFIG_GROUP, ...groups.map((g) => g.name)];
+  const hiddenCount = allGroups.filter((n) => !openRulesGroups[n]).length;
+
   return (
-    <div className="flex max-h-full flex-col gap-2 overflow-y-auto">
+  /* ⚠ HEADER OUTSIDE THE SCROLL BOX, BODY INSIDE, AND THE SPLIT IS A BUG FIX FOR THE
+   * CHANGE THAT INTRODUCED IT. With the whole rail as one `overflow-y-auto` column, the
+   * title bar's groups dropdown was a child of that column — and an absolutely
+   * positioned element inside a scroll container is CLIPPED BY IT. The menu rendered
+   * and was then cut off at the container edge, which is worse than not rendering: it
+   * read as broken rather than absent. The scroll fix and the thing it broke shipped in
+   * the same change, which is the shape the corpus keeps naming — a repair is the
+   * highest-risk place to create the next defect.
+   *
+   * ⚠ This wrapper must NOT carry `overflow`, or the clip returns. */
+    <div className="flex h-full max-h-full flex-col gap-2">
       {/* Master title bar — owns the "hide the whole rail" close X. The
           existing PanelStub re-opens it. Kept separate from the per-
           group toolboxes so toggling individual groups doesn't fight
           the master affordance. */}
       <MasterTitleBar
         title={`rules · ${lens.name.toLowerCase()}`}
+        groups={allGroups}
+        isOpen={(name) => !!openRulesGroups[name]}
+        onToggleGroup={toggleRulesGroup}
         onClose={onClose}
       />
+      <div className="flex min-h-0 flex-col gap-2 overflow-y-auto">
 
       {groups.length === 0 && (
         <GroupPanel title="lens" empty />
       )}
 
-      {groups.map((g) => {
-        const isOpen = !!openRulesGroups[g.name];
-        const label = g.name.toLowerCase();
-        const onToggle = () => toggleRulesGroup(g.name);
-        if (isOpen) {
-          return (
-            <GroupPanel key={g.name} title={label} onClose={onToggle}>
-              {g.items.map((t) => (
-                <RuleControl
-                  key={t.id}
-                  rule={t}
-                  value={readTunable(t)}
-                  onChange={(v) => writeTunable(t, v)}
-                />
-              ))}
-            </GroupPanel>
-          );
-        }
-        return <ClosedGroupTab key={g.name} label={label} onOpen={onToggle} />;
-      })}
+      {openRulesGroups[CONFIG_GROUP] && (
+        <GroupPanel
+          title="config"
+          onClose={() => toggleRulesGroup(CONFIG_GROUP)}
+        >
+          <ConfigPanel tunables={lens.tunables} />
+        </GroupPanel>
+      )}
+
+      {/* ⚠ ONLY OPEN GROUPS RENDER. A closed group used to keep a full-height
+          header row in the rail, so eight groups cost eight rows before any
+          control — the rail was mostly a list of things you were not looking at.
+          Visibility moved to the menu in the title bar above. */}
+      {groups.filter((g) => openRulesGroups[g.name]).map((g) => (
+        <GroupPanel
+          key={g.name}
+          title={g.name.toLowerCase()}
+          onClose={() => toggleRulesGroup(g.name)}
+        >
+          {g.items.map((t) => (
+            <RuleControl
+              key={t.id}
+              rule={t}
+              value={readTunable(t)}
+              onChange={(v) => writeTunable(t, v)}
+            />
+          ))}
+        </GroupPanel>
+      ))}
+
+      {/* ⚠ NEVER-FAIL-SILENTLY AT THE UI TIER. With closed groups rendering
+          nothing, an all-closed rail is an empty box that looks broken rather
+          than empty. Say which state it is and where the switch is. */}
+      {hiddenCount === allGroups.length && allGroups.length > 0 && (
+        <div
+          className="glass-med rounded-panel shrink-0 px-3 py-2 font-mono text-[length:var(--text-xs)]"
+          style={{ color: "var(--fg-faint)" }}
+        >
+          {hiddenCount} group{hiddenCount === 1 ? "" : "s"} hidden — open them from
+          the <span style={{ color: "var(--fg-muted)" }}>groups</span> menu above.
+        </div>
+      )}
+      </div>
     </div>
   );
 }
 
+/** The rail's title bar, and the owner of group visibility.
+ *
+ * ⚠ THE MENU LIVES HERE RATHER THAN IN THE TOOLBAR, deliberately. It governs the
+ * rules groups and nothing else, so putting it in the global toolbar would imply a
+ * scope it does not have — and the toolbar is shared by every substrate while the
+ * group list is per-lens and changes on a lens swap.
+ */
 function MasterTitleBar({
   title,
+  groups,
+  isOpen,
+  onToggleGroup,
   onClose,
 }: {
   title: string;
+  groups: string[];
+  isOpen: (name: string) => boolean;
+  onToggleGroup: (name: string) => void;
   onClose?: (() => void) | undefined;
 }) {
+  const [menu, setMenu] = useState(false);
+  const openCount = groups.filter(isOpen).length;
+  const box = useRef<HTMLDivElement | null>(null);
+
+  /* ⚠ CLICK-OUTSIDE AND ESC, because the first version could only be closed by hitting
+   * the same button again. A dropdown you cannot dismiss the way every other dropdown
+   * dismisses is not a small annoyance — it is the control reading as stuck. */
+  useEffect(() => {
+    if (!menu) return;
+    const away = (e: MouseEvent): void => {
+      if (box.current && !box.current.contains(e.target as Node)) setMenu(false);
+    };
+    const key = (e: KeyboardEvent): void => { if (e.key === "Escape") setMenu(false); };
+    // `true` — capture, so a click on the canvas beneath still closes it
+    document.addEventListener("mousedown", away, true);
+    document.addEventListener("keydown", key);
+    return () => {
+      document.removeEventListener("mousedown", away, true);
+      document.removeEventListener("keydown", key);
+    };
+  }, [menu]);
   return (
-    <div className="glass-med rounded-panel flex h-9 items-center justify-between px-3">
+    /* ⚠ `z-30` ON THE HEADER ITSELF, not only on the dropdown. `glass-med` applies a
+       `backdrop-filter`, and that CREATES A STACKING CONTEXT — so the menu's own z-index
+       is scoped inside this element and cannot lift it above a SIBLING. With the header
+       unlayered, the scrolling body painted over the menu's first two rows and they
+       vanished behind the "groups hidden" notice: the menu looked truncated while being
+       perfectly complete. A z-index on a child cannot escape its parent's context. */
+    <div ref={box} className="glass-med rounded-panel relative z-30 flex h-9 shrink-0 items-center justify-between px-3">
       <div className="flex items-center gap-2">
         <Settings size={12} className="text-fg-muted" />
         <div className="font-mono text-[length:var(--text-xs)] uppercase tracking-[0.14em] text-fg-muted">
           {title}
         </div>
       </div>
-      {onClose && (
+      <div className="flex items-center gap-1">
+        {groups.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setMenu((m) => !m)}
+            className="btn btn-ghost font-mono text-[length:var(--text-xs)] lowercase"
+            style={{ height: 22, padding: "0 6px" }}
+            aria-expanded={menu}
+            aria-label="Choose which rule groups are shown"
+          >
+            groups {openCount}/{groups.length}
+          </button>
+        )}
+        {onClose && (
         <button
           type="button"
           onClick={onClose}
@@ -113,36 +213,127 @@ function MasterTitleBar({
         >
           <X size={10} />
         </button>
+        )}
+      </div>
+
+      {menu && (
+        <div
+          className="rounded-panel absolute right-0 top-10 z-30 flex max-h-[60vh] min-w-[11rem] flex-col overflow-y-auto p-1 shadow-lg"
+          /* ⚠ AN OPAQUE BACKGROUND, NOT `glass-med`. The panels are translucent because
+             they sit over a mostly-static canvas; a MENU sits over whatever the
+             substrate is drawing right now, and a nine-row list over a dancing tissue
+             is unreadable. Same reason it needs a z-index above the panels rather than
+             beside them. */
+          style={{ background: "var(--bg)", border: "1px solid var(--border)" }}
+          role="menu"
+        >
+          {groups.map((name) => {
+            const on = isOpen(name);
+            return (
+              <button
+                key={name}
+                type="button"
+                role="menuitemcheckbox"
+                aria-checked={on}
+                onClick={() => onToggleGroup(name)}
+                className="flex shrink-0 items-center gap-2 rounded px-2 py-1 text-left font-mono text-[length:var(--text-xs)] lowercase hover:text-fg"
+                style={{ color: on ? "var(--fg)" : "var(--fg-faint)" }}
+              >
+                <span style={{ width: "1ch" }}>{on ? "\u2713" : ""}</span>
+                {name.toLowerCase()}
+              </button>
+            );
+          })}
+        </div>
       )}
     </div>
   );
 }
 
-function ClosedGroupTab({
-  label,
-  onOpen,
-}: {
-  label: string;
-  onOpen: () => void;
-}) {
-  // Looks like a panel header with no body; clicking the row opens the
-  // group. Visually echoes the open `GroupPanel` header so the rail
-  // reads as a stack of collapsed/expanded sections.
+/* ⚠ A PSEUDO-GROUP, NOT A TUNABLE GROUP. `CONFIG_GROUP` is not a `group` any substrate
+ * declares — it is a name reserved by the chrome so the config panel can share the
+ * open/close machinery, the menu and the scroll behaviour that real groups have. It is
+ * spelled with a space because a `group` string is a plain identifier in substrate code
+ * and nobody would type one with a space; a collision would silently merge the two.
+ * The same class of mistake as naming a display tier `Colour` next to a physics one. */
+const CONFIG_GROUP = "· config";
+
+/** The whole-world dump/load, driven only by the tunable manifest — so every substrate
+ *  gets it without writing a line. Writes go through `writeTunable`, the same function
+ *  a slider calls. */
+function ConfigPanel({ tunables }: { tunables: readonly LensTunable[] }) {
+  const [text, setText] = useState("");
+  const [status, setStatus] = useState<{ kind: "ok" | "bad"; lines: string[] } | null>(null);
+
+  const meta = {
+    substrate: session.active_substrate_id,
+    lens: session.active_lens_id,
+    puzzle: session.active_puzzle_id,
+  };
+
+  const dump = () => {
+    setText(JSON.stringify(buildDump(meta, tunables, readTunable), null, 2));
+    setStatus({ kind: "ok", lines: [`dumped ${tunables.length} knobs`] });
+  };
+
+  const load = () => {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch (e) {
+      setStatus({ kind: "bad", lines: [`not JSON: ${(e as Error).message}`] });
+      return;
+    }
+    const plan = planApply(parsed, meta, tunables);
+    if (plan.mismatch !== null) {
+      setStatus({ kind: "bad", lines: [`refused — ${plan.mismatch}`] });
+      return;
+    }
+    const byId = new Map(tunables.map((t) => [t.id, t]));
+    for (const w of plan.writes) {
+      const t = byId.get(w.id);
+      if (t) writeTunable(t, w.value);
+    }
+    setStatus({
+      kind: plan.problems.length > 0 ? "bad" : "ok",
+      lines: [`applied ${plan.writes.length} knobs`, ...plan.problems],
+    });
+  };
+
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="glass-med rounded-panel flex h-9 w-full items-center justify-between px-3 text-left transition-colors hover:text-fg"
-      aria-label={`Open ${label} rules`}
-    >
-      <div className="flex items-center gap-2">
-        <Settings size={12} className="text-fg-muted" />
-        <div className="font-mono text-[length:var(--text-xs)] uppercase tracking-[0.14em] text-fg-muted">
-          {label}
-        </div>
+    <div className="flex flex-col gap-1.5 px-2 py-2">
+      <div className="flex gap-1">
+        <button type="button" onClick={dump} className="btn btn-ghost font-mono text-[length:var(--text-xs)]" style={{ height: 22, padding: "0 8px" }}>
+          dump
+        </button>
+        <button type="button" onClick={load} className="btn btn-ghost font-mono text-[length:var(--text-xs)]" style={{ height: 22, padding: "0 8px" }} disabled={text.trim() === ""}>
+          load
+        </button>
       </div>
-      <span className="font-mono text-[length:var(--text-xs)] text-fg-faint">+</span>
-    </button>
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        spellCheck={false}
+        rows={8}
+        placeholder="press dump, or paste a config here and press load"
+        className="w-full rounded p-1.5 font-mono text-[length:var(--text-xs)]"
+        style={{ background: "var(--btn-bg)", color: "var(--fg-muted)", border: "1px solid var(--border)", resize: "vertical" }}
+      />
+      {status && (
+        <div
+          className="font-mono text-[length:var(--text-xs)]"
+          style={{ color: status.kind === "ok" ? "var(--fg-muted)" : "var(--accent)" }}
+        >
+          {status.lines.map((l) => <div key={l}>{l}</div>)}
+        </div>
+      )}
+      {/* ⚠ THE CAVEAT SHIPS WITH THE FEATURE. A dump rebuilds the world you are in; it
+          does not replay the path you took to get there. Without this line the panel
+          quietly promises reproducibility it cannot give. */}
+      <div className="font-mono text-[length:var(--text-xs)]" style={{ color: "var(--fg-faint)" }}>
+        a dump is a world, not a trajectory — it will not replay a live-tweaked run
+      </div>
+    </div>
   );
 }
 
@@ -158,7 +349,12 @@ function GroupPanel({
   children?: ReactNode;
 }) {
   return (
-    <div className="glass-med rounded-panel flex flex-col overflow-hidden">
+    /* ⚠ `shrink-0`: a direct child of the scrolling flex column. Without it the
+       browser SQUASHES the panels to fit instead of scrolling them, which is a
+       quieter failure than the overflow it replaced — measured in isolation as
+       client=393 / scroll=393 / scrolls=false, i.e. no scrollbar and no clue.
+       Bounding the container was only half the fix. */
+    <div className="glass-med rounded-panel flex shrink-0 flex-col overflow-hidden">
       <div className="flex h-9 items-center justify-between border-b border-[var(--border)] px-3">
         <div className="flex items-center gap-2">
           <Settings size={12} className="text-fg-muted" />
@@ -267,7 +463,7 @@ function RuleControl({
     );
   }
 
-  if (rule.type === "enum" && rule.display === "list") {
+  if (rule.type === "enum" && enumDisplay(rule) === "list") {
     const v = String(value ?? "");
     return (
       <div className="px-2 py-1.5">

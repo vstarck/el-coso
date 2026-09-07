@@ -96,10 +96,20 @@ export default function App() {
             <div
               className="pointer-events-auto absolute"
               style={{
+                /* ⚠ `bottom`, NOT `maxHeight`, AND THE DIFFERENCE IS WHY THE RAIL
+                 * DID NOT SCROLL. `RulesRail`'s root has had `max-h-full
+                 * overflow-y-auto` all along; with only `top` + `max-height` here the
+                 * container's height is AUTO, and a percentage `max-height` against an
+                 * auto-height containing block resolves to `none` — so the scroll box
+                 * was never bounded and the groups spilled off the page. Measured in
+                 * isolation: child client=900 / scroll=900 / scrolls=false with this
+                 * shape, client=393 / scroll=900 / scrolls=true with `bottom`.
+                 * The inspector rail two blocks up always set `top` AND `bottom`, which
+                 * is why it never had this. */
                 top: PAD + TOOLBAR_H + GAP,
+                bottom: PAD + TIMELINE_H + GAP,
                 right: PAD,
                 width: RULES_W,
-                maxHeight: `calc(100% - ${PAD + TOOLBAR_H + GAP + TIMELINE_H + GAP + PAD}px)`,
               }}
             >
               <RulesRail onClose={() => togglePanel("rules")} />
