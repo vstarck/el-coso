@@ -45,11 +45,34 @@ export type SpeedOption = {
   isDefault?: boolean;
 };
 
+/** What every rule carries, whatever its type.
+ *
+ *  ⚠ EXTRACTED, rather than adding `public` to four object literals. Four copies of
+ *  `id`/`group`/`label` were already three copies too many, and the failure mode of the
+ *  duplicated form is silent: a field added to three of the four members type-checks
+ *  everywhere and is simply absent for whichever kind was missed. */
+type RuleCommon = {
+  id: string;
+  group: string;
+  label: string;
+  /** Whether this knob belongs on a PUBLIC surface — a post, an embed in a page —
+   *  as opposed to the studio, which shows everything.
+   *
+   *  ⚠ ABSENT MEANS NOT PUBLIC. A knob reaches a public surface only by saying so,
+   *  because the failure mode of the other default is a knob appearing in front of
+   *  visitors because someone forgot a field. The studio rail ignores this entirely;
+   *  it is the embed manifest (`TunableManifest.public`) that carries it to a host.
+   *
+   *  ⚠ THIS IS A FLAG, NOT A DESCRIPTION. There is deliberately no `desc` beside it:
+   *  a knob's user-facing text lives in the substrate's own `tunables.md`, where a
+   *  host can take a suggested tooltip or write its own. A string in this type would
+   *  be shipped data — minified into every bundle whether or not anything renders it —
+   *  and the substrate's documentation is the better owner of prose that changes. */
+  public?: boolean;
+};
+
 export type Rule =
-  | {
-      id: string;
-      group: string;
-      label: string;
+  | (RuleCommon & {
       type: "float";
       min: number;
       max: number;
@@ -60,22 +83,16 @@ export type Rule =
        *  max(|min|, |max|)`). Default `"linear"`. */
       curve?: "linear" | "signed-cubic";
       unit?: string;
-    }
-  | {
-      id: string;
-      group: string;
-      label: string;
+    })
+  | (RuleCommon & {
       type: "int";
       min: number;
       max: number;
       step: number;
       unit?: string;
-    }
-  | { id: string; group: string; label: string; type: "bool" }
-  | {
-      id: string;
-      group: string;
-      label: string;
+    })
+  | (RuleCommon & { type: "bool" })
+  | (RuleCommon & {
       type: "enum";
       options: string[];
       /** How the chrome paints the choice. `"segmented"` (default) is a
@@ -83,7 +100,7 @@ export type Rule =
        *  vertical stack of full-width clickable rows — for many or
        *  long-labelled options (e.g. a paged manual's page selector). */
       display?: "segmented" | "list";
-    };
+    });
 
 export type SubstrateMeta = {
   id: string;

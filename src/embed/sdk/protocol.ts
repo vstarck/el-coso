@@ -39,6 +39,14 @@ export type TunableManifest = {
   path: string[];
   label: string;
   group?: string;
+  /** The lens's `Rule.public` — whether this knob is meant for a PUBLIC surface.
+   *
+   *  ⚠ ADDITIVE, and an embed built before this field existed simply omits it. A host
+   *  must therefore read `public === true` and never `!== false`: absent means "this
+   *  guest does not say", which is the same answer as "no" and deliberately so.
+   *  Group-name filtering was the previous approximation and it does not fit — one
+   *  substrate's ticks split two of its groups down the middle. */
+  public?: boolean;
   type: "float" | "int" | "bool" | "enum";
   min?: number;
   max?: number;

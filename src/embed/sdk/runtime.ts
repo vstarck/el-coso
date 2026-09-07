@@ -30,9 +30,18 @@ type GuestGlobal = { mount?: (target: HTMLElement | string, config: EmbedConfig)
 
 const STATE_POLL_MS = 250; // play-state is polled (EmbedHandle has no subscribe)
 
-function tunableManifest(tunables: LensTunable[]): TunableManifest[] {
+/** ⚠ EXPORTED FOR ITS GATE. This is the whole lens→host translation for tunables and it
+ *  is a hand-written field copy; `tests/embed-manifest.test.ts` drives THIS function
+ *  rather than reproducing it, because a gate that transcribes a wire tests the
+ *  transcription and stays green while the shipped line drops a field. */
+export function tunableManifest(tunables: LensTunable[]): TunableManifest[] {
   return tunables.map((t) => {
     const m: TunableManifest = { path: t.path, label: t.label, group: t.group, type: t.type };
+    // ⚠ THIS FUNCTION IS THE WIRE, and it copies field by field: a property added to
+    // both `Rule` and `TunableManifest` but not to this line type-checks perfectly and
+    // arrives at every host as `undefined`. `tests/embed-manifest.test.ts` asserts this
+    // one at the FAR end for that reason.
+    if (t.public === true) m.public = true;
     if (t.type === "float" || t.type === "int") {
       if (typeof t.min === "number") m.min = t.min;
       if (typeof t.max === "number") m.max = t.max;
