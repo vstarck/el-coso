@@ -4,7 +4,19 @@
  * shape the output. Every combination is a compiling no-op-but-green lens.
  *
  * Generated code uses string concatenation (not template literals) so this
- * builder needs no backtick escaping. */
+ * builder needs no backtick escaping.
+ *
+ * WARNING: parts of this file ARE template literals, so a backtick in a comment you
+ * add here terminates the string and the whole module stops parsing. A markdown-style
+ * `quoted identifier` in a comment is enough to do it; this was learned by doing it.
+ *
+ * S201 — THE SCAFFOLDING IS A CONSUMER OF THE LENS CONTRACT AND NOTHING RE-CHECKS IT.
+ * `MountedLens.renderFrom` became `(state: ReadonlyState<State>) => void`, declared as
+ * a function-type property so the parameter is contravariant and a mutable one is
+ * REJECTED. This generator kept emitting the mutable form and its own gate
+ * (tests/new-substrate-rot.test.mjs) had been red ever since, because a generator is
+ * the one consumer nobody re-runs when the thing it generates against moves. When the
+ * contract in src/lenses/types.ts changes, grep here. */
 
 const ACCENT = "#7dd3fc";
 const CELL_PX = 16;
@@ -12,25 +24,28 @@ const CELL_PX = 16;
 // lens/render.ts — Q1 render target.
 export function renderTs({ forms: F, answers: A }) {
   if (A.render === "ascii") {
-    return `import type { SubstrateState } from "../engine";
+    return `import type { ReadonlyState } from "@/lenses/types";
+import type { SubstrateState } from "../engine";
 
 // ASCII render — return the text the lens writes into its <pre>.
-export function render${F.pascal}Text(state: SubstrateState): string {
+export function render${F.pascal}Text(state: ReadonlyState<SubstrateState>): string {
   return "${F.title} — tick " + state.tick + "  (" + state.W + "x" + state.H + ")";
 }
 `;
   }
   if (A.render === "dom") {
-    return `import type { SubstrateState } from "../engine";
+    return `import type { ReadonlyState } from "@/lenses/types";
+import type { SubstrateState } from "../engine";
 
 // DOM render — return the text/markup the lens writes into its <div>.
-export function render${F.pascal}Dom(state: SubstrateState): string {
+export function render${F.pascal}Dom(state: ReadonlyState<SubstrateState>): string {
   return "${F.title} — tick " + state.tick;
 }
 `;
   }
   if (A.render === "webgl") {
-    return `import type { SubstrateState } from "../engine";
+    return `import type { ReadonlyState } from "@/lenses/types";
+import type { SubstrateState } from "../engine";
 
 // WebGL render — clear the framebuffer to the background each frame. An
 // honest no-op-but-green stub: it draws nothing yet, but it is real GL (it
@@ -39,7 +54,7 @@ export function render${F.pascal}Dom(state: SubstrateState): string {
 // for cells/sprites, createTexture + createFullScreenPass for fields. \`state\`
 // is threaded through so the real draw already has it.
 export function draw${F.pascal}Frame(
-  state: SubstrateState,
+  state: ReadonlyState<SubstrateState>,
   gl: WebGL2RenderingContext,
   opts: { width: number; height: number },
 ): void {
@@ -51,13 +66,14 @@ export function draw${F.pascal}Frame(
 `;
   }
   // canvas2d
-  return `import type { SubstrateState } from "../engine";
+  return `import type { ReadonlyState } from "@/lenses/types";
+import type { SubstrateState } from "../engine";
 
 const COLOR_BG = "#0b0d12";
 
 // Canvas render — draw one frame of the substrate. Stub: background + tick.
 export function draw${F.pascal}Frame(
-  state: SubstrateState,
+  state: ReadonlyState<SubstrateState>,
   ctx: CanvasRenderingContext2D,
   opts: { cell_px: number },
 ): void {
@@ -115,7 +131,9 @@ export function lensIndexTs({ forms: F, answers: A }) {
   if (isWebgl) imp.push(`import { createGLContext } from "@/lib/gl";`);
   if (held) imp.push(`import { attachKeyControls } from "@/lib/canvas/key-controls";`);
   if (stamp && isCanvas) imp.push(`import { attachBrush } from "@/lib/canvas/brush";`);
-  const lensTypes = ["Cadence", "CommitGlyph", "Lens", "LensMountArgs", "LensTunable", "MountedLens", "TunableValue"];
+  // ReadonlyState is always needed: renderFrom takes it, and every generated lens
+  // has a renderFrom. Kept sorted so the emitted import block is stable.
+  const lensTypes = ["Cadence", "CommitGlyph", "Lens", "LensMountArgs", "LensTunable", "MountedLens", "ReadonlyState", "TunableValue"];
   if (safeArea) lensTypes.push("ViewportInset");
   imp.push(`import type {\n  ${lensTypes.join(",\n  ")},\n} from "@/lenses/types";`);
   if (isCanvas) imp.push(`import { draw${P}Frame } from "./render";`);
@@ -306,7 +324,9 @@ function mount${P}(
   const { container, history, host } = args;${historyUsed ? "" : "\n  void history;"}
 
 ${container}${sizing}${safe}${input}${driver}
-  function renderFrom(state: SubstrateState): void {
+  // ReadonlyState, not SubstrateState: MountedLens.renderFrom is a function-type
+  // PROPERTY so the parameter is contravariant and a mutable one is rejected.
+  function renderFrom(state: ReadonlyState<SubstrateState>): void {
 ${renderBody}
   }
 
