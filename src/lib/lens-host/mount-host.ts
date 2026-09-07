@@ -103,11 +103,28 @@ function buildFrames(
   if (getComputedStyle(container).position === "static") {
     container.style.position = "relative";
   }
-  const cleanup = () => {
-    container.style.position = prev_position;
-  };
 
   const outer = document.createElement("div");
+
+  /* ★ `cleanup` is the SINGLE OWNER of undoing everything this function did to the
+   * container — the removal as well as the style restore — and it closes over the node
+   * that is actually the container's child.
+   *
+   * It did not use to. The caller removed the node instead, via
+   * `if (outer.parentNode === container) container.removeChild(outer)` — but the
+   * `renderSize` branch below appends `outer` and then returns the ENVELOPE under the
+   * same name, one level down. So on that branch the caller's condition was
+   * UNREACHABLE and nothing was ever removed: measured at two orphaned divs per
+   * mount/destroy cycle, monotonic, on all 16 substrates that declare `meta.renderSize`
+   * (a control substrate with no `renderSize` was clean, isolating it to that branch).
+   *
+   * The defect was in the NAME, not the logic: one identifier meant "the container's
+   * child" in two branches and "a grandchild" in the third. Whoever owns the append
+   * owns the remove. */
+  const cleanup = () => {
+    if (outer.parentNode === container) container.removeChild(outer);
+    container.style.position = prev_position;
+  };
   outer.style.position = "absolute";
   outer.style.inset = "0";
   outer.style.isolation = "isolate";
@@ -262,8 +279,7 @@ export function mountHost<State extends TickedState, Config, Input, CommitPayloa
       observer?.disconnect();
       fpsHud?.destroy();
       tree.unmount();
-      if (outer.parentNode === container) container.removeChild(outer);
-      cleanup();
+      cleanup();   // owns BOTH the DOM removal and the style restore (buildFrames)
     },
   };
 }
