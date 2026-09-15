@@ -47,6 +47,23 @@ export type CommandSource = {
   // seconds. The shell prints the RESOLVED value, and a rejection prints the
   // same `error: …` line a synchronous throw does.
   dispatch(name: string, args: unknown[]): string | void | Promise<string | void>;
+  // Candidate values for ONE argument position, for Tab completion. `index` is
+  // the 0-based ARG index (not the token index — the command name is not an
+  // argument), and `args` carries the raw tokens typed for the args before it,
+  // so a position may depend on an earlier one: `set <tunable> <value>` reads
+  // `args[0]` to know which tunable's options to offer.
+  //
+  // Returns ALL candidates for the position, UNFILTERED — the shell owns prefix
+  // matching, so there is exactly one implementation of it. An empty array means
+  // "nothing to offer here" (a free-form number, an unknown name, a position
+  // past the declared args) and is not an error: this runs on every Tab against
+  // a half-typed line, so it must never throw where `dispatch` legitimately
+  // would. Optional — a source that omits it completes command names only.
+  completeArg?(
+    name: string,
+    index: number,
+    args: ReadonlyArray<string>,
+  ): ReadonlyArray<string>;
 };
 
 // ── Input (abstract) ─────────────────────────────────────────────────────────
@@ -206,12 +223,44 @@ export function createShell(opts: ShellOptions): Shell {
     return list.some((c) => c.name === "help") ? [...list] : [...list, HELP];
   }
 
+  // The longest prefix shared by every candidate — what an ambiguous Tab
+  // advances to. With ~40 tunables on one lens, listing alone is unusable:
+  // `set l⇥` should reach `lambda_` before printing anything.
+  function commonPrefix(words: string[]): string {
+    if (words.length === 0) return "";
+    let out = words[0]!;
+    for (const w of words) {
+      let i = 0;
+      while (i < out.length && i < w.length && out[i] === w[i]) i++;
+      out = out.slice(0, i);
+    }
+    return out;
+  }
+
+  // Tab completes whichever token the cursor sits in. Position 0 is the COMMAND
+  // NAME (matched against the live list); every later position is an ARGUMENT,
+  // whose candidates only the source knows — and which must NOT fall back to the
+  // command list, or `set lam⇥` would helpfully offer a command name.
   function complete(): void {
-    const names = currentCommands().map((c) => c.name);
-    const matches = names.filter((n) => n.startsWith(before));
+    const prefix = /(\S*)$/.exec(before)![1]!;
+    const head = before.slice(0, before.length - prefix.length);
+    const typed = head.trim() === "" ? [] : head.trim().split(/\s+/);
+    const index = typed.length; // 0 = the command name, n = argument n-1
+
+    let candidates: ReadonlyArray<string>;
+    if (index === 0) {
+      candidates = currentCommands().map((c) => c.name);
+    } else if (source.completeArg) {
+      candidates = source.completeArg(typed[0]!, index - 1, typed.slice(1));
+    } else {
+      candidates = [];
+    }
+
+    const matches = candidates.filter((n) => n.startsWith(prefix));
     if (matches.length === 1) {
-      before = matches[0]! + " ";
+      before = head + matches[0]! + " ";
     } else if (matches.length > 1) {
+      before = head + commonPrefix(matches); // advance as far as is unambiguous
       pushLine(matches.join("  "));
     }
     emit();

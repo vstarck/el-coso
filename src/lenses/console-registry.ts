@@ -177,6 +177,13 @@ export function buildConsoleRegistry<S extends TickedState, C, I, P>(
       },
     },
     {
+      present: true,
+      built: {
+        descriptor: { name: "about", label: "who made this" },
+        handler: () => "made by Valentin",
+      },
+    },
+    {
       present: a.onSnapshot !== undefined,
       built: {
         descriptor: { name: "snapshot", label: "capture a still" },
@@ -239,5 +246,34 @@ export function buildConsoleRegistry<S extends TickedState, C, I, P>(
       : run();
   }
 
-  return { list, dispatch };
+  // Tab-completion candidates for one ARGUMENT position (spec/26 §6). Unfiltered
+  // — the shell owns prefix matching. Total, and NEVER throwing: this runs on
+  // every Tab against a half-typed line, so `set nope ⇥` must answer "nothing to
+  // offer", where the same input through `dispatch` correctly throws `unknown
+  // tunable`. Nothing is offered for a free-form number: a candidate list a
+  // value cannot come from is worse than no list.
+  function completeArg(
+    name: string,
+    index: number,
+    args: ReadonlyArray<string>,
+  ): ReadonlyArray<string> {
+    // A substrate that declares its own `set` OWNS the name — `dispatch` routes
+    // there, so the built-in's candidates would describe a command that no
+    // longer runs. Same routing test, same order, as `dispatch`.
+    if (substrateCommands().some((c) => c.name === name)) return [];
+    if ((name === "set" || name === "get") && index === 0) {
+      return tunables.map((t) => t.id);
+    }
+    if (name === "set" && index === 1) {
+      const t = tunables.find((x) => x.id === String(args[0] ?? ""));
+      if (!t) return [];
+      if (t.type === "enum") return t.options;
+      if (t.type === "bool") return ["true", "false"];
+      return []; // int / float — the value is free-form
+    }
+    if (name === "speed" && index === 0) return lens.speeds.map((sp) => sp.id);
+    return []; // substrate commands own their args; no candidates yet
+  }
+
+  return { list, dispatch, completeArg };
 }

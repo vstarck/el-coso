@@ -297,3 +297,217 @@ describe("buildConsoleRegistry", () => {
     expect(reg.list().map((c) => c.name)).toContain("boom");
   });
 });
+
+// ── argument completion (S203) ───────────────────────────────────────────────
+//
+// Tab used to complete command NAMES only; everything past the first space fell
+// through to a bare `list()` match that could never hit. These pin the arg tier:
+// the shell asks the source for candidates at a position, filters by the typed
+// prefix, and — the part that makes 40 tunables usable — extends an ambiguous
+// match to its longest common prefix instead of only listing it.
+
+describe("createShell — argument completion", () => {
+  // A source with two commands and a position-dependent candidate set: `set`
+  // completes tunable names at arg 0 and that tunable's OPTIONS at arg 1, so the
+  // second position provably depends on the first.
+  function tunableSource(): CommandSource {
+    const options: Record<string, string[]> = {
+      mode: ["alpha", "beta"],
+      size: [], // numeric — no candidate set at all
+    };
+    return {
+      list: () => [
+        {
+          name: "set",
+          args: [
+            { name: "tunable", type: "string" },
+            { name: "value", type: "string" },
+          ],
+        },
+        { name: "lambda_area" }, // a command sharing a prefix with a tunable
+      ],
+      dispatch: () => {},
+      completeArg: (name, index, args) => {
+        if (name !== "set") return [];
+        if (index === 0) return ["mode", "size", "lambda_perimeter", "lambda_image"];
+        if (index === 1) return options[String(args[0] ?? "")] ?? [];
+        return [];
+      },
+    };
+  }
+
+  function type(sh: Shell, text: string): void {
+    for (const ch of text) sh.handle({ kind: "insert", ch });
+  }
+
+  it("completes a unique tunable name at the first argument", () => {
+    const sh = createShell({ source: tunableSource() });
+    type(sh, "set mo");
+    sh.handle({ kind: "key", key: "tab" });
+    expect(sh.view().edit.before).toBe("set mode ");
+  });
+
+  it("extends an ambiguous argument to the longest common prefix", () => {
+    const sh = createShell({ source: tunableSource() });
+    type(sh, "set l");
+    sh.handle({ kind: "key", key: "tab" });
+    // Two candidates share `lambda_`; neither is complete, so no trailing space.
+    expect(sh.view().edit.before).toBe("set lambda_");
+    expect(scrollbackText(sh)).toContain("lambda_perimeter");
+    expect(scrollbackText(sh)).toContain("lambda_image");
+  });
+
+  it("completes a VALUE from the tunable named in the previous argument", () => {
+    const sh = createShell({ source: tunableSource() });
+    type(sh, "set mode a");
+    sh.handle({ kind: "key", key: "tab" });
+    expect(sh.view().edit.before).toBe("set mode alpha ");
+  });
+
+  it("offers every candidate when the argument is still empty", () => {
+    const sh = createShell({ source: tunableSource() });
+    type(sh, "set mode ");
+    sh.handle({ kind: "key", key: "tab" });
+    // Both options listed; the line is untouched (no common prefix to add).
+    expect(scrollbackText(sh)).toContain("alpha");
+    expect(scrollbackText(sh)).toContain("beta");
+    expect(sh.view().edit.before).toBe("set mode ");
+  });
+
+  it("leaves the line alone where the source offers no candidates", () => {
+    const sh = createShell({ source: tunableSource() });
+    type(sh, "set size 4");
+    sh.handle({ kind: "key", key: "tab" });
+    expect(sh.view().edit.before).toBe("set size 4");
+  });
+
+  // ── controls ──────────────────────────────────────────────────────────────
+  // A dead `completeArg` must not fall back to matching COMMAND names past the
+  // first token: that is the pre-S203 bug, and it reads as a plausible
+  // completion. `lambda_area` is a command here precisely so that a shell
+  // completing arg 0 against `list()` would answer "lambda_area " and be caught.
+  it("never completes an argument from the COMMAND list", () => {
+    const source = tunableSource();
+    const sh = createShell({ source: { list: source.list, dispatch: source.dispatch } });
+    type(sh, "set lambda_a");
+    sh.handle({ kind: "key", key: "tab" });
+    expect(sh.view().edit.before).toBe("set lambda_a");
+  });
+
+  it("still completes command NAMES when the source has no completeArg", () => {
+    const source = tunableSource();
+    const sh = createShell({ source: { list: source.list, dispatch: source.dispatch } });
+    type(sh, "lam");
+    sh.handle({ kind: "key", key: "tab" });
+    expect(sh.view().edit.before).toBe("lambda_area ");
+  });
+});
+
+// ── the registry's `about` + candidate sets (S203) ───────────────────────────
+
+describe("buildConsoleRegistry — about", () => {
+  it("offers `about` and prints the authorship line", () => {
+    const { reg } = makeRegistry();
+    expect(reg.list().map((c) => c.name)).toContain("about");
+    expect(reg.dispatch("about", [])).toBe("made by Valentin");
+  });
+
+  // `about` is a built-in like any other, so the standard override path applies.
+  it("a substrate `about` overrides the built-in", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { reg } = makeRegistry({
+      commands: () => [{ name: "about" }],
+      command: () => "made by somebody else",
+    });
+    expect(reg.dispatch("about", [])).toBe("made by somebody else");
+    warn.mockRestore();
+  });
+});
+
+describe("buildConsoleRegistry — completeArg", () => {
+  // The harness lens declares `size` (int) and `mode` (enum a|b), speeds 1x/2x.
+  it("completes tunable ids for `set` and `get`", () => {
+    const { reg } = makeRegistry();
+    expect(reg.completeArg!("set", 0, [])).toEqual(["size", "mode"]);
+    expect(reg.completeArg!("get", 0, [])).toEqual(["size", "mode"]);
+  });
+
+  it("completes an enum tunable's OPTIONS at the value position", () => {
+    const { reg } = makeRegistry();
+    expect(reg.completeArg!("set", 1, ["mode"])).toEqual(["a", "b"]);
+  });
+
+  it("offers no values for a NUMERIC tunable — a number has no candidate set", () => {
+    const { reg } = makeRegistry();
+    expect(reg.completeArg!("set", 1, ["size"])).toEqual([]);
+  });
+
+  it("completes speed ids", () => {
+    const { reg } = makeRegistry();
+    expect(reg.completeArg!("speed", 0, [])).toEqual(["1x", "2x"]);
+  });
+
+  // ── controls ──────────────────────────────────────────────────────────────
+  // Completion runs on every Tab keystroke against a half-typed line; an
+  // unknown name must yield nothing, NEVER the `unknown tunable: …` throw the
+  // dispatch path raises for the same input.
+  it("returns nothing for an unknown tunable rather than throwing", () => {
+    const { reg } = makeRegistry();
+    expect(() => reg.dispatch("set", ["nope", "1"])).toThrow(/unknown tunable/);
+    expect(reg.completeArg!("set", 1, ["nope"])).toEqual([]);
+  });
+
+  // `dispatch` routes an overridden name to the SUBSTRATE; completion has to
+  // agree, or the console offers tunable ids for a `set` that means something
+  // else entirely — a plausible-looking list for a command the built-in no
+  // longer owns.
+  it("offers nothing for a name the substrate has OVERRIDDEN", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { reg } = makeRegistry({
+      commands: () => [{ name: "set", label: "the substrate's own set" }],
+      command: () => {},
+    });
+    expect(reg.completeArg!("set", 0, [])).toEqual([]);
+    warn.mockRestore();
+  });
+
+  it("returns nothing for a command with no candidate set, and past its args", () => {
+    const { reg } = makeRegistry();
+    expect(reg.completeArg!("describe", 0, [])).toEqual([]);
+    expect(reg.completeArg!("set", 2, ["mode", "a"])).toEqual([]);
+  });
+});
+
+// ── the wire (S203) ──────────────────────────────────────────────────────────
+//
+// `completeArg` is OPTIONAL on `CommandSource`, so a registry that stopped
+// returning it — or a shell that stopped asking — is a silent no-op that every
+// unit row above still passes: the shell rows use a hand-built source, the
+// registry rows call `completeArg` directly. This is the only row that drives
+// the real registry through the real shell, which is where the wire lives.
+
+describe("registry → shell (the wire)", () => {
+  it("Tab at the prompt completes a real tunable through the real registry", () => {
+    const { reg } = makeRegistry();
+    const sh = createShell({ source: reg });
+    for (const ch of "set mo") sh.handle({ kind: "insert", ch });
+    sh.handle({ kind: "key", key: "tab" });
+    expect(sh.view().edit.before).toBe("set mode ");
+  });
+
+  it("and completes that tunable's enum value at the next position", () => {
+    const { reg } = makeRegistry();
+    const sh = createShell({ source: reg });
+    for (const ch of "set mode ") sh.handle({ kind: "insert", ch });
+    sh.handle({ kind: "key", key: "tab" });
+    // `a` and `b` share nothing, so the line is unchanged and both are listed.
+    expect(scrollbackText(sh)).toContain("a  b");
+  });
+
+  it("`about` runs end to end from a typed line", () => {
+    const { reg } = makeRegistry();
+    const sh = createShell({ source: reg });
+    typeLine(sh, "about");
+    expect(scrollbackText(sh)).toContain("made by Valentin");
+  });
+});
