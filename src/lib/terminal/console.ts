@@ -165,7 +165,37 @@ export function buildConsoleCss(prefix: string): string {
   visibility: visible;
   transition: transform 140ms ease-out, visibility 0s linear 0s;
 }
-.${c.log} { flex: 1; overflow-y: auto; white-space: pre-wrap; word-break: break-word; opacity: 0.92; }
+.${c.log} {
+  flex: 1; overflow-y: auto; white-space: pre-wrap; word-break: break-word; opacity: 0.92;
+  /* (No backticks below this line: it is inside a template literal.)
+     ★ THESE TWO ARE WHAT ACTUALLY PAINTS IT, including in Chromium — measured
+     at S203, not assumed. With every ::-webkit- rule below deleted the gutter
+     and the thumb colour are unchanged; with these two deleted instead, the
+     computed scrollbar-color falls back to auto. Chrome honours the
+     standard properties and ignores the pseudo-elements once they are set, so
+     the block below is the FALLBACK for engines that lack them (older Safari),
+     not the primary. An earlier version of this comment claimed the reverse. */
+  scrollbar-width: thin;
+  scrollbar-color: ${palette.text}55 transparent;
+}
+/* FALLBACK for engines without scrollbar-width / scrollbar-color (see above).
+   The scrollbar is part of the terminal, not the OS: a default bar is a bright
+   light-grey slab over the phosphor panel. Tinted from the THEME's text colour
+   so it follows the palette instead of freezing one green, and every selector
+   is SCOPED to the log — the console mounts inside somebody else's page, and a
+   bare ::-webkit-scrollbar rule would repaint that page's scrollbars too. */
+.${c.log}::-webkit-scrollbar { width: 10px; }
+.${c.log}::-webkit-scrollbar-track { background: transparent; }
+.${c.log}::-webkit-scrollbar-thumb {
+  background: ${palette.text}44;
+  /* Inset via a transparent border rather than a narrower track, so the thumb
+     keeps the full hit area while reading as a thin phosphor bar. */
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  border-radius: 6px;
+}
+.${c.log}::-webkit-scrollbar-thumb:hover { background: ${palette.text}88; background-clip: padding-box; }
+.${c.log}::-webkit-scrollbar-corner { background: transparent; }
 .${c.line} { display: flex; align-items: baseline; padding-top: 6px; white-space: pre-wrap; word-break: break-word; }
 .${c.prompt} { opacity: 0.8; white-space: pre; }
 .${c.before}, .${c.after} { white-space: pre-wrap; word-break: break-word; }
