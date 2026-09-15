@@ -95,6 +95,18 @@ export type Rule =
   | (RuleCommon & {
       type: "enum";
       options: string[];
+      /** The subset of `options` a PUBLIC surface should offer — `RuleCommon.public`
+       *  one level down. `public` says whether the knob belongs on a public surface at
+       *  all; this says which of its choices do, for an enum whose options are not
+       *  uniformly public (`preset`: some saved worlds are labs-only).
+       *
+       *  ⚠ A HINT, NOT A FILTER. `options` stays the complete, authoritative set and
+       *  remains what a value is validated against, so every option is still settable
+       *  by id from a console or a labs page. Absent ⇒ "this lens does not say", which
+       *  a host must read as "offer them all" — the behaviour before this field
+       *  existed. Filtering `options` itself would make a labs world unreachable
+       *  rather than unadvertised, which is a removal wearing the word "hint". */
+      public_options?: string[];
       /** How the chrome paints the choice. `"segmented"` (default) is a
        *  horizontal button group — good for 2–3 short options. `"list"` is a
        *  vertical stack of full-width clickable rows — for many or

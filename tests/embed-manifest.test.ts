@@ -20,6 +20,13 @@ const enumRule: LensTunable = {
   target: "lens", path: ["source"], id: "source", group: "Look",
   label: "Draw", type: "enum", options: ["a", "b"],
 };
+/* An enum whose options split into a public subset and a labs remainder — the
+ * `preset` knob's shape. S203. */
+const splitEnumRule: LensTunable = {
+  target: "lens", path: ["preset"], id: "preset", group: "Preset",
+  label: "Load world", type: "enum", options: ["shown", "hidden"],
+  public: true, public_options: ["shown"],
+};
 
 test("every declared manifest field survives the copy — the whole wire, pinned", () => {
   const [m] = tunableManifest([floatRule]);
@@ -57,4 +64,46 @@ test("`public` reaches a host only when the lens says so, and absence stays abse
 test("an explicit `public: false` is carried as absence, like saying nothing", () => {
   const [m] = tunableManifest([{ ...floatRule, public: false }]);
   expect("public" in m!).toBe(false);
+});
+
+/* ── `public_options` (S203) ──────────────────────────────────────────────────
+ * `Rule.public` says whether a KNOB belongs on a public surface. For an enum
+ * that is not enough: `preset` is public, but some of the worlds it can load are
+ * labs-only. `public_options` is the same idea one level down — the subset of
+ * `options` a public surface should OFFER, while every option stays settable by
+ * id so the console and a labs page keep the whole list.
+ *
+ * ⚠ It is a HINT, not a filter. `options` is unchanged and remains the
+ * validation set; a host that ignores `public_options` behaves exactly as
+ * before. That is why the first row below asserts both arrays arrive.
+ */
+
+test("`public_options` reaches the host BESIDE the full options, not instead of them", () => {
+  const [m] = tunableManifest([splitEnumRule]);
+  expect(m!.options).toEqual(["shown", "hidden"]);
+  expect(m!.public_options).toEqual(["shown"]);
+});
+
+test("the whole wire for a split enum, pinned by deep equality", () => {
+  const [m] = tunableManifest([splitEnumRule]);
+  expect(m).toEqual({
+    path: ["preset"], label: "Load world", group: "Preset", type: "enum",
+    public: true, options: ["shown", "hidden"], public_options: ["shown"],
+  });
+});
+
+/* Absent stays absent, same contract as `public`: an embed built before this
+ * field existed omits it, and a host must read it as "this guest does not say"
+ * — which means "offer everything", the pre-S203 behaviour. */
+test("an enum that says nothing carries no `public_options` key at all", () => {
+  const [m] = tunableManifest([enumRule]);
+  expect("public_options" in m!, "an absent hint must not be materialised").toBe(false);
+});
+
+/* Control: the copy is by VALUE, not by reference. A host mutating what it was
+ * handed must not reach back into the lens's own declaration. */
+test("the host gets a copy it cannot use to mutate the lens's declaration", () => {
+  const [m] = tunableManifest([splitEnumRule]);
+  m!.public_options!.push("smuggled");
+  expect(splitEnumRule.type === "enum" && splitEnumRule.public_options).toEqual(["shown"]);
 });

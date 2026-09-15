@@ -52,6 +52,11 @@ export type TunableManifest = {
   max?: number;
   step?: number;
   options?: string[];
+  /** The lens's `Rule.public_options` — which of `options` a public surface should
+   *  OFFER. Absent ⇒ the guest does not say ⇒ offer all of `options`, exactly as
+   *  hosts behaved before this field existed. `options` is still the validation set:
+   *  this hides a choice from a menu, it does not make it unsettable. */
+  public_options?: string[];
 };
 
 // host → guest

@@ -48,6 +48,11 @@ export function tunableManifest(tunables: LensTunable[]): TunableManifest[] {
       if (typeof t.step === "number") m.step = t.step;
     }
     if (t.type === "enum" && Array.isArray(t.options)) m.options = t.options.slice();
+    // `.slice()` for the same reason as `options` above: the host gets a copy, so
+    // mutating what it was handed cannot reach back into the lens's declaration.
+    if (t.type === "enum" && Array.isArray(t.public_options)) {
+      m.public_options = t.public_options.slice();
+    }
     return m;
   });
 }
