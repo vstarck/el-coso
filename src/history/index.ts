@@ -14,7 +14,9 @@ export {
   historyActiveBranch,
   historyListBranches,
   historyLineageCommits,
+  historyEditConfig,
 } from "./history";
+export { tapeShare, tapeRestore, tapeSetPath, tapeDiff, tapeApply, type TapeOp, type TapePatch } from "./config-tape";
 export type {
   Branch,
   BranchId,

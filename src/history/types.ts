@@ -16,6 +16,7 @@
 //                  Caches for state_at; removing them must not change
 //                  observable behavior.
 
+import type { TapePatch } from "./config-tape";
 import type {
   ResolutionRecord,
   RNGState,
@@ -35,6 +36,10 @@ export type InputEntry<Input> = {
   // under `entropy` mode; under `rng`/`verify` the keyframed seed
   // re-derives the same answers.
   resolutions?: ResolutionRecord[];
+  // The config tape (spec/31): the config in effect FROM this tick on, present only on ticks where it changed. An
+  // immutable snapshot, shared by reference with keyframes and `History.config_tape`; never written. `unknown`
+  // because a Branch carries no Config parameter; history.ts casts at its use sites.
+  config?: unknown;
 };
 
 // How the history layer backs the resolver seam (spec/27):
@@ -82,6 +87,9 @@ export type Keyframe<State> = {
   tick: number;
   snapshot: State;
   rng: RNGState;
+  // The tape snapshot in effect at this tick (spec/31), by reference. Without it a keyframe restored under an
+  // edited config replays its segment under the wrong one, and keyframes stop being a cache (spec/14 Invariant 1).
+  config?: unknown;
 };
 
 // A substrate's BTTF contract. Two pure functions; the substrate stays
@@ -180,7 +188,22 @@ export type History<
   CommitPayload,
 > = {
   bundle: SubstrateBundle<State, Config, Input>;
+  // The LIVE config. Its identity never changes. A live edit goes through `historyEditConfig`, which records it on
+  // the tape; replay restores it in place (spec/31). A write straight into it still takes effect at the head but is
+  // NOT recorded (the guard, `config_verify`, makes that loud).
   config: Config;
+  // The last recorded config snapshot (spec/31). Immutable: replaced, never written.
+  config_tape: Config;
+  // Edits made through `historyEditConfig` since the last tick, as a patch of paths, waiting for the next
+  // `historyTick` at the head (spec/31 §4). `null` when none.
+  config_pending: TapePatch | null;
+  // The tape plus the pending edits already written into the live config (those made AT the head): what the live
+  // config should equal. Read only by the guard. `null` when no edit is staged.
+  config_staged: Config | null;
+  // The guard (spec/31 §5): when true, `historyTick` and every config restore throw if the live config differs from
+  // what the API recorded, naming the paths, so a write that bypasses `historyEditConfig` is loud. A whole-config walk:
+  // tests turn it on; the app does not (it is what the per-tick diff cost).
+  config_verify?: boolean;
   adapter: HistoryAdapter<State, Input, CommitPayload>;
   substrate: Substrate<State>;
   rng: RNGState;

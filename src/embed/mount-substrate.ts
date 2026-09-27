@@ -19,7 +19,7 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { createHistory, historyReset, type HistoryAdapter } from "@/history";
+import { createHistory, historyEditConfig, historyReset, type HistoryAdapter } from "@/history";
 import { mountHost, type TouchAction } from "@/lib/lens-host/mount-host";
 import { makeLensHost } from "@/lib/lens-host/host";
 import type {
@@ -194,7 +194,7 @@ export function mountSubstrate(
   if (config.speed) mounted.tree.root.setSpeed(config.speed);
   if (config.autoplay === false) host.setPlaying(false);
   const setLoop = (on: boolean): void => {
-    (history.config as { loop?: boolean }).loop = on;
+    historyEditConfig(history, ["loop"], on); // a live edit: through the history (spec/31), so replay reproduces it
   };
   if (config.loop !== undefined) setLoop(config.loop);
 

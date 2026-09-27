@@ -5,6 +5,7 @@ import {
   tickReplay as engineTickReplay,
 } from "@/engine/substrate";
 import type { ResolutionRecord, SubstrateBundle } from "@/engine/types";
+import { tapeApply, tapeDiff, tapeRestore, tapeSetPath, tapeShare, type TapeOp } from "./config-tape";
 import type {
   Branch,
   BranchId,
@@ -40,6 +41,8 @@ export function createHistory<
   // requires entropy_draw and a tickResolve bundle (checked at historyTick).
   resolver_mode?: ResolverMode;
   entropy_draw?: () => number;
+  // spec/31 §5: throw on a config write that bypassed historyEditConfig. A whole-config walk per tick: for tests.
+  config_verify?: boolean;
 }): History<State, Config, Input, CommitPayload> {
   const substrate = engineAlloc(args.bundle, args.config);
   const root_branch_id = args.root_branch_id ?? DEFAULT_ROOT_BRANCH_ID;
@@ -52,6 +55,9 @@ export function createHistory<
     substrate,
     rng: { seed: args.rng_seed },
     rng_seed_initial: args.rng_seed,
+    config_tape: tapeShare(args.config, undefined) as Config, // the root snapshot (spec/31)
+    config_pending: null,
+    config_staged: null,
     branches: {},
     active: root_branch_id,
     anchored_branch: root_branch_id,
@@ -61,6 +67,7 @@ export function createHistory<
   };
   if (args.resolver_mode !== undefined) h.resolver_mode = args.resolver_mode;
   if (args.entropy_draw !== undefined) h.entropy_draw = args.entropy_draw;
+  if (args.config_verify) h.config_verify = true;
   h.branches[root_branch_id] = makeEmptyBranch(root_branch_id, null, 0, 0);
 
   emitRootCommit(h);
@@ -81,6 +88,11 @@ export function historyReset<
   h.substrate.read = fresh.read;
   h.substrate.write = fresh.write;
   h.rng = { seed: h.rng_seed_initial };
+  // spec/31 §4: a reset rebuilds from the config AS IT STANDS (rele and una-wacha mutate, then reset), so the tape
+  // restarts from it and a pending edit, already visibly not in effect, is discarded.
+  h.config_tape = tapeShare(h.config, undefined) as Config;
+  h.config_pending = null;
+  h.config_staged = null;
   for (const key of Object.keys(h.branches)) delete h.branches[key];
   h.branches[h.root_branch_id] = makeEmptyBranch(h.root_branch_id, null, 0, 0);
   h.active = h.root_branch_id;
@@ -115,6 +127,19 @@ export function historyTick<
     historyStateAt(h, h.active, active.head_tick);
   }
 
+  // The config tape (spec/31): the edits made since the last tick land HERE, at the head, onto the head's config
+  // (re-applied if already written: idempotent), and the tape moves along their paths only. No config walk.
+  let configChanged = false;
+  if (h.config_pending !== null) {
+    const pending = h.config_pending;
+    tapeApply(h.config, pending);
+    h.config_tape = pending.reduce<Config>((t, op) => tapeSetPath(t, op.path, "delete" in op ? undefined : op.value) as Config, h.config_tape);
+    h.config_pending = null;
+    h.config_staged = null;
+    configChanged = true;
+  }
+  if (h.config_verify) verifyConfig(h, h.config_tape, `before tick ${active.head_tick + 1}`);
+
   // Resolver backing (spec/27). Under "rng" (default) the transcript is
   // derived from the threaded RNG and discarded — replay re-derives from
   // the keyframed seed, the pre-spec contract verbatim. Under
@@ -146,6 +171,7 @@ export function historyTick<
   const after = h.substrate.read;
 
   const entry: InputEntry<Input> = { tick: after.tick, input };
+  if (configChanged) entry.config = h.config_tape;
   if (mode !== "rng" && t.records !== null && t.records.length > 0) {
     entry.resolutions = t.records;
   }
@@ -198,7 +224,10 @@ export function historyStateAt<
   const best = findBestKeyframe(lineage, tick);
 
   if (best === null) {
-    // No keyframe anywhere on lineage — replay from root state.
+    // No keyframe anywhere on lineage — replay from root state, under the root config.
+    const rootConfig = h.branches[h.root_branch_id]!.keyframes[0]?.config;
+    if (rootConfig === undefined) throw new Error("history: no root keyframe config to replay from (spec/31)");
+    restoreConfig(h, rootConfig);
     const fresh = engineAlloc(h.bundle, h.config);
     h.substrate.read = fresh.read;
     h.substrate.write = fresh.write;
@@ -206,6 +235,8 @@ export function historyStateAt<
     replayForward(h, lineage, 0, 0, tick);
   } else {
     const k = best.keyframe;
+    if (k.config === undefined) throw new Error(`history: keyframe at tick ${k.tick} carries no config (spec/31)`);
+    restoreConfig(h, k.config);
     restoreSnapshot(h.substrate.read, k.snapshot);
     restoreSnapshot(h.substrate.write, k.snapshot);
     h.rng = { seed: k.rng.seed };
@@ -248,6 +279,11 @@ export function historyAdvance<
   records?: ResolutionRecord[],
 ): void {
   const mode = h.resolver_mode ?? "rng";
+  // spec/31: behind the head the tape wins, found HERE rather than passed in (the ~30 lens call sites pass an input
+  // they build themselves). At or beyond the head nothing is touched: six substrates drive everything through
+  // historyAdvance, keep no log, and write their config every frame.
+  const logged = loggedEntryAfter(h);
+  if (logged !== null && logged.config !== undefined) restoreConfig(h, logged.config);
   h.rng = engineTickReplay(
     h.bundle,
     h.substrate,
@@ -258,6 +294,40 @@ export function historyAdvance<
     mode === "verify",
   ).rng;
   engineSwap(h.substrate);
+}
+
+// THE live config edit (spec/31 §3.2): every channel that changes a config value while a history runs (a lens's
+// setTunable, the Rules rail, the embed) goes through here, so replay can reproduce it. `path` is the key path into
+// the config; `value` undefined deletes an object key. At the head the live config is written at once; behind the
+// head (scrubbed back) it is NOT (the past is shown as it ran), and either way the edit lands on the next
+// `historyTick`, at the head. Refuses what the Rules rail's setByPath skipped silently: a path through a missing or
+// non-object parent.
+export function historyEditConfig<
+  State extends TickedState,
+  Config,
+  Input,
+  CommitPayload,
+>(
+  h: History<State, Config, Input, CommitPayload>,
+  path: readonly (string | number)[],
+  value: unknown,
+): void {
+  if (path.length === 0) throw new Error("historyEditConfig: empty path (the config itself cannot be replaced)");
+  let parent: unknown = h.config;
+  for (const k of path.slice(0, -1)) {
+    const next = (parent as Record<string | number, unknown>)[k];
+    if (next === null || typeof next !== "object") throw new Error(`historyEditConfig: ${path.join(".")}: "${String(k)}" is not an object`);
+    parent = next;
+  }
+  if (value === undefined && (Array.isArray(parent) || ArrayBuffer.isView(parent))) throw new Error(`historyEditConfig: ${path.join(".")}: cannot delete an array element`);
+  const op: TapeOp = value === undefined ? { path: [...path], delete: true } : { path: [...path], value: tapeShare(value, undefined) };
+  const active = h.branches[h.active];
+  if (!active) throw new Error(`active branch missing: ${h.active}`);
+  if (substrateAt(h, h.active, active.head_tick)) {
+    h.config_staged = tapeSetPath(h.config_staged ?? h.config_tape, op.path, "delete" in op ? undefined : op.value) as Config;
+    tapeApply(h.config, [op]);
+  }
+  h.config_pending = h.config_pending === null ? [op] : [...h.config_pending, op];
 }
 
 // Append a one-off commit on the active branch at the substrate's current
@@ -580,6 +650,7 @@ function replayForward<S extends TickedState, C, I, P>(
           `replay: missing input at tick ${next_tick} on branch ${seg.branch.id} (idx ${idx})`,
         );
       }
+      if (entry.config !== undefined) restoreConfig(h, entry.config); // spec/31: the config this tick ran under
       // Serve the entry's transcript per resolver_mode (spec/27): "rng" —
       // no transcript, re-derive from the keyframed seed; "verify" —
       // re-derive AND compare, throw on drift; "entropy" — the transcript
@@ -647,7 +718,41 @@ function pushKeyframe<S extends TickedState, C, I, P>(
     tick: h.substrate.read.tick,
     snapshot: captureSnapshot(h.substrate.read),
     rng: { seed: h.rng.seed },
+    config: h.config_tape, // by reference: tape snapshots are immutable (spec/31)
   });
+}
+
+// --- config tape helpers (spec/31) ----------------------------------------
+
+// Restore a tape snapshot into the live config IN PLACE (its identity is held by lens closures and engine caches),
+// and make it the tape's current snapshot. Staged edits stay pending: they land at the head.
+function restoreConfig<S extends TickedState, C, I, P>(h: History<S, C, I, P>, snap: unknown): void {
+  const equalTo = h.config_staged ?? h.config_tape; // what the live config equals, so shared subtrees are skipped
+  if (h.config_verify) verifyConfig(h, equalTo, "before a config restore");
+  tapeRestore(h.config, snap, equalTo);
+  h.config_tape = snap as C;
+  h.config_staged = null;
+}
+
+// The guard (spec/31 §5): the live config must equal what the API recorded; a difference is a write that bypassed
+// historyEditConfig, and it is named.
+function verifyConfig<S extends TickedState, C, I, P>(h: History<S, C, I, P>, expected: unknown, when: string): void {
+  if (tapeShare(h.config, expected) === expected) return;
+  const paths = tapeDiff(h.config, expected).map((op) => op.path.join("."));
+  throw new Error(`history: config written without historyEditConfig (${when}): ${paths.join(", ")}`);
+}
+
+// The logged entry that takes the anchored substrate from its current tick to the next, or null when the substrate
+// is at or beyond its anchored branch's head (nothing logged to replay: the log-less loops live there).
+function loggedEntryAfter<S extends TickedState, C, I, P>(h: History<S, C, I, P>): InputEntry<I> | null {
+  const branch = h.branches[h.anchored_branch];
+  const tick = h.substrate.read.tick;
+  if (!branch || tick >= branch.head_tick) return null;
+  const next = tick + 1;
+  for (const seg of buildLineage(h, h.anchored_branch, next)) {
+    if (next > seg.from && next <= seg.to) return seg.branch.inputs[next - seg.branch.fork_tick - 1] ?? null;
+  }
+  return null;
 }
 
 // True iff the substrate's current `read` carries (branch, tick), keyed on

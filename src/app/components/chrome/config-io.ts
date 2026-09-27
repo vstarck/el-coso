@@ -16,7 +16,9 @@ import type { LensTunable, TunableValue } from "@/lenses/types";
  * ⚠ A DUMP IS A WORLD, NOT A TRAJECTORY. It rebuilds the configuration you are in. It
  * will not replay a run that was live-tweaked for fifteen thousand ticks, because the
  * path taken is not in the config. The panel says so; so does this comment, because
- * the two are equally likely to be read.
+ * the two are equally likely to be read. (Since spec/31 the HISTORY holds that path:
+ * every config change is recorded on its tick and replayed in place. The dump still
+ * carries only the world.)
  */
 
 export type ConfigDump = {

@@ -13,6 +13,7 @@
 
 import { Settings, X } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { historyEditConfig } from "@/history";
 import { session } from "@/app/session";
 import { useStore } from "@/app/store";
 import type { LensTunable, TunableValue } from "@/lenses/types";
@@ -401,10 +402,12 @@ function writeTunable(t: LensTunable, value: TunableValue): void {
     session.mounted_lens?.setTunable(t.path, value);
     return;
   }
-  // Config writes go directly to the (shared, polled) history.config.
-  // Bump historyVersion so anything subscribed (including this rail
-  // through its own historyVersion subscription) re-renders.
-  setByPath(session.history.config, t.path, value);
+  // Config writes go through the history's edit API (spec/31), so replay
+  // reproduces them; it refuses a path through a missing parent, which
+  // setByPath skipped silently. Bump historyVersion so anything subscribed
+  // (including this rail through its own historyVersion subscription)
+  // re-renders.
+  historyEditConfig(session.history, t.path, value);
   useStore.getState().bumpHistoryVersion();
 }
 
@@ -418,18 +421,6 @@ function getByPath(obj: unknown, path: string[]): TunableValue | undefined {
     return cur;
   }
   return undefined;
-}
-
-function setByPath(obj: unknown, path: string[], value: TunableValue): void {
-  if (obj === null || typeof obj !== "object") return;
-  let cur = obj as Record<string, unknown>;
-  for (let i = 0; i < path.length - 1; i++) {
-    const key = path[i]!;
-    const next = cur[key];
-    if (next === null || typeof next !== "object") return;
-    cur = next as Record<string, unknown>;
-  }
-  cur[path[path.length - 1]!] = value;
 }
 
 function RuleControl({
