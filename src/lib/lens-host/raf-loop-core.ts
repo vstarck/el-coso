@@ -99,7 +99,17 @@ export type FrameProfileSample = {
   ms: number;
 };
 
-function computeFocused(): boolean {
+/** The app-chrome activity predicate: is this window the one the player is
+ *  looking at? EXPORTED because it is the *only* definition of that, and a
+ *  second copy is how the lens's answer and the loop's gate drift apart —
+ *  `storeLensHost.isActive` calls exactly this. The loop caches it behind
+ *  focus/visibility listeners only to keep a 60 Hz gate off `document.hasFocus()`;
+ *  a poller at 10 Hz should just call it.
+ *
+ *  ⚠ NOT the embed's predicate. An iframe is almost never focused, so the embed
+ *  host injects its own (viewport intersection + tab visibility) — see
+ *  `mount-host.ts`. Two activity MODELS, deliberately; one definition each. */
+export function windowIsActive(): boolean {
   if (typeof document === "undefined") return true;
   return document.hasFocus() && !document.hidden;
 }
@@ -123,9 +133,9 @@ export function attachRafLoopCore(opts: RafLoopCoreOpts): RafLoopHandle {
   // Built-in focus gate (the app default). When the host injects `isActive`,
   // it owns the activity signal and these listeners are never registered.
   const owns_focus_gate = opts.isActive === undefined;
-  let is_focused = computeFocused();
+  let is_focused = windowIsActive();
   const onFocusChange = (): void => {
-    is_focused = computeFocused();
+    is_focused = windowIsActive();
   };
   if (owns_focus_gate) {
     window.addEventListener("focus", onFocusChange);

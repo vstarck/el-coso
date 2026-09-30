@@ -189,6 +189,8 @@ function makeRegistry(overrides?: Partial<MountedLens<never>>): Harness {
     setSpeedId: (id: string) => {
       speedId.v = id;
     },
+    // Always active: this stub exercises the console, not the motion gate.
+    isActive: () => true,
     getPlayheadTick: () => 0,
     setPlayheadTick: () => {},
     getHistoryVersion: () => 0,

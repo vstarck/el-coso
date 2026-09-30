@@ -296,6 +296,26 @@ export type LensHost = {
   isPlaying(): boolean;
   setPlaying(playing: boolean): void;
   togglePlaying(): void;
+  // ★ IS THE SUBSTRATE ACTUALLY ADVANCING? `isPlaying()` is INTENT and is not
+  // the whole gate: the host's rAF drains ticks only when
+  // `isActive() && isPlaying()` (raf-loop-core), and the two hosts mean
+  // different things by active — the app chrome gates on WINDOW FOCUS, an embed
+  // on TAB VISIBILITY + VIEWPORT INTERSECTION (an iframe is almost never
+  // focused). A lens that needs to know whether time is moving — one driving
+  // audio, a wall-clock animation, anything whose cost or output should stop
+  // when the picture stops — must ask BOTH.
+  //
+  // ⚠ ASK, DO NOT REIMPLEMENT. A lens-side IntersectionObserver or
+  // `document.hasFocus()` is a second implementation of one decision, and the
+  // two would genuinely DISAGREE: the chrome's gate is focus and the embed's is
+  // visibility, so a lens copying either is wrong in the other host. In the
+  // embed path this is the very closure the loop gates on (`mount-host`
+  // decorates the host with it), so the lens's answer cannot drift from the
+  // loop's.
+  //
+  // Polled, not subscribed — the loop itself polls it every frame; there is no
+  // event to subscribe to for viewport intersection without a second observer.
+  isActive(): boolean;
   // Speed preset id (one of the lens's `speeds`). The host owns the
   // selection so a transport knob in chrome OR embed drives the same lens.
   getSpeedId(): string;

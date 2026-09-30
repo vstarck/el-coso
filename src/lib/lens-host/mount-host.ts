@@ -16,6 +16,7 @@ import {
   chromeAppliesPerspective,
   hasFeature,
   type Lens,
+  type LensHost,
   type ReadonlyState,
   type RenderSize,
   type ViewportInset,
@@ -25,7 +26,7 @@ import { attachRafLoopCore } from "./raf-loop-core";
 import { type FrameProfiler, frameProfilerFromEnv } from "./frame-profiler";
 import { fpsHudEnabledFromEnv, makeFpsHud, type FpsHud } from "./fps-hud";
 import type { FpsStats } from "./fps-stats";
-import { makeLensHost } from "./host";
+import { activityGate, makeLensHost } from "./host";
 import { mountLensTree, type LensTree } from "./mount-tree";
 
 // Matches the app's SubstrateHost perspective feel (it has no chrome to
@@ -188,9 +189,46 @@ export function mountHost<State extends TickedState, Config, Input, CommitPayloa
   history: History<State, Config, Input, CommitPayload>,
   opts: MountHostOptions<State> = {},
 ): MountedHost<State> {
-  const host = opts.host ?? makeLensHost();
+  const base_host = opts.host ?? makeLensHost();
   const renderSize = opts.renderSize;
   const { outer, root_frame, cleanup } = buildFrames(container, lens, renderSize);
+
+  // Embed activity gate — unlike the app chrome, an embed must keep ticking
+  // while *unfocused* (an iframe is rarely focused; a self-playing embed has to
+  // run on load). It pauses only when the tab is hidden or the embed scrolls
+  // out of view. `inView` comes from an IntersectionObserver on `outer`; with
+  // the implicit root it's clipped by ancestor frames, so a same-origin iframe
+  // scrolled out of the parent viewport reports not-intersecting. (A sandboxed
+  // / cross-origin iframe can't see the parent's scroll, so it stays "in view"
+  // there and only the tab-hidden gate fires — acceptable, the tick is cheap.)
+  let in_view = true;
+  const observer =
+    typeof IntersectionObserver !== "undefined"
+      ? new IntersectionObserver(
+          (entries) => {
+            for (const e of entries) in_view = e.isIntersecting;
+          },
+          { threshold: 0 },
+        )
+      : null;
+  observer?.observe(outer);
+  const isActive = (): boolean =>
+    in_view && (typeof document === "undefined" || !document.hidden);
+
+  /* ★ ONE CLOSURE, TWO READERS — the lens's `host.isActive()` and the rAF loop's
+   * tick gate below are the SAME function, not two implementations of one rule.
+   * The loop pauses ticks on `isActive() && isPlaying()`, so a lens asking those
+   * two questions learns exactly whether time is moving; if this were a second
+   * copy, the answer could drift from the gate and nothing would notice (review
+   * protects components, nothing protects wiring).
+   *
+   * ⚠ DECORATED, not mutated, and it OVERRIDES whatever the caller's host said.
+   * `makeLensHost` defaults `isActive` to the window-focus predicate, which is
+   * wrong in an iframe; a caller-supplied `opts.host` cannot know it is about to
+   * be embedded. This is the only place that knows, so this is where it is
+   * decided. The spread is safe — every `LensHost` member is a method closing
+   * over its own state, never a field read off `this`. */
+  const { host, gate } = activityGate(base_host, isActive);
 
   // Touch-gesture policy: `outer` is an ancestor of every canvas the lens
   // mounts (full-bleed: outer › center › root_frame; renderSize: outer is the
@@ -217,28 +255,6 @@ export function mountHost<State extends TickedState, Config, Input, CommitPayloa
     0,
   );
 
-  // Embed activity gate — unlike the app chrome, an embed must keep ticking
-  // while *unfocused* (an iframe is rarely focused; a self-playing embed has to
-  // run on load). It pauses only when the tab is hidden or the embed scrolls
-  // out of view. `inView` comes from an IntersectionObserver on `outer`; with
-  // the implicit root it's clipped by ancestor frames, so a same-origin iframe
-  // scrolled out of the parent viewport reports not-intersecting. (A sandboxed
-  // / cross-origin iframe can't see the parent's scroll, so it stays "in view"
-  // there and only the tab-hidden gate fires — acceptable, the tick is cheap.)
-  let in_view = true;
-  const observer =
-    typeof IntersectionObserver !== "undefined"
-      ? new IntersectionObserver(
-          (entries) => {
-            for (const e of entries) in_view = e.isIntersecting;
-          },
-          { threshold: 0 },
-        )
-      : null;
-  observer?.observe(outer);
-  const isActive = (): boolean =>
-    in_view && (typeof document === "undefined" || !document.hidden);
-
   const profiler = opts.profiler ?? frameProfilerFromEnv(opts.profileLabel);
   // Built-in `?fps` HUD — paints in `outer` (the embed frame) on demand. The
   // app chrome reads the same stats via its toolbar, so it never gates this on.
@@ -257,7 +273,10 @@ export function mountHost<State extends TickedState, Config, Input, CommitPayloa
     ...(tree.root.tick ? { tick: tree.root.tick } : {}),
     ...(tree.root.speedMult ? { speedMult: tree.root.speedMult } : {}),
     isPlaying: () => host.isPlaying(),
-    isActive,
+    // ⚠ `gate`, NOT a fresh closure: this is the half of the pair the lens does
+    // not see, and passing anything else here is the divergence `activityGate`
+    // exists to prevent. The only line in this seam no `node` gate can reach.
+    isActive: gate,
     reportFps: (stats: FpsStats) => {
       opts.reportFps?.(stats);
       fpsHud?.report(stats);
