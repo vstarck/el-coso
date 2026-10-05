@@ -132,7 +132,11 @@ export function buildConsoleRegistry<S extends TickedState, C, I, P>(
           if (!lens.speeds.some((s) => s.id === id)) {
             throw new Error(`unknown speed: ${id} — try ${lens.speeds.map((s) => s.id).join(" / ")}`);
           }
+          // ★ BOTH, as the Toolbar does (Toolbar.tsx:155-158): the host's id is the LABEL every surface shows, the
+          // lens's `setSpeed` is the multiplier the loop reads. Setting only the id changed the label and not the rate
+          // (spec/32 D2, S248).
           host.setSpeedId(id);
+          mounted.setSpeed(id);
           return `speed ${id}`;
         },
       },

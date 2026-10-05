@@ -203,6 +203,9 @@ function makeRegistry(overrides?: Partial<MountedLens<never>>): Harness {
     step: () => {
       steps.n++;
     },
+    // `setSpeed` is REQUIRED by MountedLens; this fixture lacked it until the console's `speed` started calling it
+    // (spec/32 D2, S248) — a fixture less capable than the type hides exactly that kind of wire.
+    setSpeed: () => {},
     getTunable: (path: string[]) => store[path[0]!],
     setTunable: (path: string[], value: TunableValue) => {
       store[path[0]!] = value;
