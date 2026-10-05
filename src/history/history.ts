@@ -323,11 +323,17 @@ export function historyEditConfig<
   const op: TapeOp = value === undefined ? { path: [...path], delete: true } : { path: [...path], value: tapeShare(value, undefined) };
   const active = h.branches[h.active];
   if (!active) throw new Error(`active branch missing: ${h.active}`);
-  if (substrateAt(h, h.active, active.head_tick)) {
+  if (atOrBeyondHead(h)) {
     h.config_staged = tapeSetPath(h.config_staged ?? h.config_tape, op.path, "delete" in op ? undefined : op.value) as Config;
     tapeApply(h.config, [op]);
   }
-  h.config_pending = h.config_pending === null ? [op] : [...h.config_pending, op];
+  // ⚠ CONSECUTIVE edits to one path coalesce: the later would overwrite the earlier anyway, and on an advance-only
+  // history (which never reaches a `historyTick` to drain this) a dragged slider otherwise grew the queue for the whole
+  // run (S248). Only the LAST queued op is compared: dropping an earlier same-path op across an intervening edit to a
+  // parent or child path could reorder a delete before a write through it, so that case still queues.
+  const last = h.config_pending?.[h.config_pending.length - 1];
+  const samePath = last !== undefined && last.path.length === op.path.length && last.path.every((k, i) => k === op.path[i]);
+  h.config_pending = h.config_pending === null ? [op] : samePath ? [...h.config_pending.slice(0, -1), op] : [...h.config_pending, op];
 }
 
 // Append a one-off commit on the active branch at the substrate's current
@@ -745,14 +751,30 @@ function verifyConfig<S extends TickedState, C, I, P>(h: History<S, C, I, P>, ex
 // The logged entry that takes the anchored substrate from its current tick to the next, or null when the substrate
 // is at or beyond its anchored branch's head (nothing logged to replay: the log-less loops live there).
 function loggedEntryAfter<S extends TickedState, C, I, P>(h: History<S, C, I, P>): InputEntry<I> | null {
-  const branch = h.branches[h.anchored_branch];
+  // ⚠ the anchored branch, not the active one: replay follows where the substrate IS. `atOrBeyondHead` adds the
+  // active-branch test because an EDIT is the active branch's; the tick rule is this one, shared.
+  if (anchoredAtOrBeyondHead(h)) return null;
+  const branch = h.branches[h.anchored_branch]!;
   const tick = h.substrate.read.tick;
-  if (!branch || tick >= branch.head_tick) return null;
   const next = tick + 1;
   for (const seg of buildLineage(h, h.anchored_branch, next)) {
     if (next > seg.from && next <= seg.to) return seg.branch.inputs[next - seg.branch.fork_tick - 1] ?? null;
   }
   return null;
+}
+
+// ★ "Live" for a config edit: the substrate is on the active branch AT or BEYOND its head. The ONE predicate, shared by
+// `historyEditConfig` (write the live config now) and `loggedEntryAfter` (behind the head the tape wins). spec/32 D1
+// (S248): they used to disagree — the edit path tested EXACTLY at the head, the advance path at-or-beyond — and an
+// advance-only history, whose head never moves past 0, ran beyond it, so every edit after tick 0 was parked for a
+// `historyTick` that never came. A scrubbed substrate (behind the head) still stages its edit for the next head tick.
+function atOrBeyondHead<S extends TickedState, C, I, P>(h: History<S, C, I, P>): boolean {
+  return h.anchored_branch === h.active && anchoredAtOrBeyondHead(h);
+}
+/** the tick half of the rule, on the branch the substrate IS on (replay follows the anchor) */
+function anchoredAtOrBeyondHead<S extends TickedState, C, I, P>(h: History<S, C, I, P>): boolean {
+  const branch = h.branches[h.anchored_branch];
+  return branch !== undefined && h.substrate.read.tick >= branch.head_tick;
 }
 
 // True iff the substrate's current `read` carries (branch, tick), keyed on

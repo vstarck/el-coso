@@ -4,7 +4,7 @@
 import { describe, expect, test } from "vitest";
 import { buildConsoleRegistry } from "@/lenses/console-registry";
 import type { Lens, LensHost, MountedLens } from "@/lenses/types";
-import { createHistory, historyAdvance, historyEditConfig, type HistoryAdapter } from "@/history";
+import { createHistory, historyAdvance, historyEditConfig, historyTick, type HistoryAdapter } from "@/history";
 import type { SubstrateBundle } from "@/engine/types";
 
 function fakes() {
@@ -55,17 +55,31 @@ const kAdapter: HistoryAdapter<S, Record<string, never>, { tick: number }> = {
 };
 
 describe("D1 — historyEditConfig on an advance-only history", () => {
-  /* ★ REPRODUCES spec/32 D1 (measured first on swarm-swart-grid, la-cosa context/substrates/swarm-swart/ux.md:81).
-   * Pins the defect's SIGNATURE — the edit is not seen, the tick still ran and still read the OLD value — rather than
-   * `test.fails`, which any failure would satisfy (S248 final review). The day D1 is fixed this row reddens; the
-   * owner's chosen fix (spec/32 §4) flips it to expect 7. */
-  test("D1 STANDS: an edit at tick 10 is NOT seen by the next advanced tick (the old value is)", () => {
+  /* ★ spec/32 D1 — FIXED (S248, the owner chose "one shared predicate"). An advance-only history (no recording) never
+   * moves its head, so after tick 0 the substrate runs BEYOND it. `historyAdvance` already called that live
+   * (`loggedEntryAfter`: a logged config is restored only BEHIND the head) while `historyEditConfig` wrote the live
+   * config only EXACTLY at the head — so every edit after tick 0 was parked for a `historyTick` that never came. Both now
+   * read one predicate. This row was "D1 STANDS" (pinned at seen === 1) until the fix; its mirror canary was the fix. */
+  test("D1: an edit at tick 10 IS seen by the next advanced tick", () => {
     const h = createHistory({ bundle: kBundle, config: { k: 1 }, rng_seed: 1, adapter: kAdapter });
     for (let i = 0; i < 10; i++) historyAdvance(h, {});
     historyEditConfig(h, ["k"], 7);
     historyAdvance(h, {});
     expect(h.substrate.read.tick).toBe(11);
-    expect(h.substrate.read.seen).toBe(1);
+    expect(h.substrate.read.seen).toBe(7);
+  });
+  /* ★ The leftover the fix leaves (S248): beyond the head an edit is ALSO queued in `config_pending` (so a later
+   * `historyTick` still lands and tapes it), and only `historyReset` clears that queue on an advance-only history — a
+   * rail slider dragged for a whole run grew it without bound. Consecutive edits to the SAME path now coalesce (the
+   * later one replaces the earlier, which it would overwrite anyway); edits to different paths still queue in order. */
+  test("D1 leftover: a drag (1000 consecutive edits to one path) leaves ONE pending op, the last value", () => {
+    const h = createHistory({ bundle: kBundle, config: { k: 1 }, rng_seed: 1, adapter: kAdapter });
+    for (let i = 0; i < 10; i++) historyAdvance(h, {});
+    for (let v = 1; v <= 1000; v++) historyEditConfig(h, ["k"], v);
+    expect(h.config_pending).toHaveLength(1);
+    expect(h.config_pending![0]).toMatchObject({ path: ["k"], value: 1000 });
+    historyAdvance(h, {});
+    expect(h.substrate.read.seen).toBe(1000);
   });
   test("control: the same edit at tick 0 IS seen (so the row above reads the head rule, not a broken fixture)", () => {
     const h = createHistory({ bundle: kBundle, config: { k: 1 }, rng_seed: 1, adapter: kAdapter });
@@ -73,4 +87,26 @@ describe("D1 — historyEditConfig on an advance-only history", () => {
     historyAdvance(h, {});
     expect(h.substrate.read.seen).toBe(7);
   });
+});
+
+/* S248 — why coalescing compares only the LAST queued op (found by canary C3: coalescing ANY earlier same-path op left
+ * every row green). Edits n.a=5, n={a:1}, n.a=9 must end at a=9; dropping the FIRST n.a (it shares a path with the
+ * third) would re-queue as [n.a=9, n={a:1}] and land a=1 at the next tick. */
+type N = { n: { a: number } };
+type NS = { tick: number; a: number };
+const nBundle: SubstrateBundle<NS, N, Record<string, never>> = {
+  alloc: () => ({ read: { tick: 0, a: 0 }, write: { tick: 0, a: 0 } }),
+  initState: () => {},
+  tick: (r, w, config, rng) => { w.tick = r.tick + 1; w.a = config.n.a; return rng; },
+};
+const nAdapter: HistoryAdapter<NS, Record<string, never>, { tick: number }> = { root_commit: (s) => ({ tick: s.tick }), commit_predicate: () => null };
+test("coalescing never reorders across an edit to a parent path (the queue lands in order at the next tick)", () => {
+  const h = createHistory({ bundle: nBundle, config: { n: { a: 0 } }, rng_seed: 1, adapter: nAdapter });
+  historyEditConfig(h, ["n", "a"], 5);
+  historyEditConfig(h, ["n"], { a: 1 });
+  historyEditConfig(h, ["n", "a"], 9);
+  expect(h.config_pending).toHaveLength(3);
+  historyTick(h, {});
+  expect(h.substrate.read.a).toBe(9);
+  expect(h.config.n.a).toBe(9);
 });
