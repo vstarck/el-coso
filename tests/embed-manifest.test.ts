@@ -35,10 +35,11 @@ test("every declared manifest field survives the copy — the whole wire, pinned
   expect(m).toEqual({
     path: ["temperature"], label: "temperature", group: "Run", type: "float",
     min: 0.5, max: 800, step: 0.5, public: true,
+    id: "temperature", target: "lens", // spec/32 D3 (S248): the declaration's own id and target now ride the wire
   });
 
   const [e] = tunableManifest([enumRule]);
-  expect(e).toEqual({ path: ["source"], label: "Draw", group: "Look", type: "enum", options: ["a", "b"] });
+  expect(e).toEqual({ path: ["source"], label: "Draw", group: "Look", type: "enum", options: ["a", "b"], id: "source", target: "lens" });
 });
 
 /* ⚠ ABSENT IS NOT `false`, AND A HOST MUST BE ABLE TO TELL. An embed built before this
@@ -89,6 +90,7 @@ test("the whole wire for a split enum, pinned by deep equality", () => {
   expect(m).toEqual({
     path: ["preset"], label: "Load world", group: "Preset", type: "enum",
     public: true, options: ["shown", "hidden"], public_options: ["shown"],
+    id: "preset", target: "lens",
   });
 });
 
@@ -106,4 +108,28 @@ test("the host gets a copy it cannot use to mutate the lens's declaration", () =
   const [m] = tunableManifest([splitEnumRule]);
   m!.public_options!.push("smuggled");
   expect(splitEnumRule.type === "enum" && splitEnumRule.public_options).toEqual(["shown"]);
+});
+
+
+/* spec/32 D3 — the wire was a hand-written field copy that dropped id, target, display, curve and unit. ONE fixture
+ * per Rule variant with EVERY optional field set; the row asserts each declared key arrives. A key added to `Rule` and
+ * to this fixture but not to the copy reddens here. */
+const FULL: LensTunable[] = [
+  { id: "f", group: "G", label: "F", public: true, type: "float", min: 0, max: 1, step: 0.1, curve: "signed-cubic", unit: "px", target: "config", path: ["f"] },
+  { id: "i", group: "G", label: "I", public: true, type: "int", min: 0, max: 9, step: 1, unit: "n", target: "lens", path: ["i"] },
+  { id: "b", group: "G", label: "B", public: true, type: "bool", target: "lens", path: ["b"] },
+  { id: "e", group: "G", label: "E", public: true, type: "enum", options: ["a", "b", "c"], public_options: ["a"], display: "list", target: "config", path: ["e"] },
+];
+test("D3 — every key a Rule declares reaches the manifest", () => {
+  const m = tunableManifest(FULL);
+  FULL.forEach((t, i) => {
+    for (const k of Object.keys(t)) expect(m[i], `${t.id}.${k}`).toHaveProperty(k);
+  });
+});
+test("D3 — the manifest copies, it does not alias (a host mutating options cannot reach the lens)", () => {
+  const m = tunableManifest(FULL);
+  m[3]!.options!.push("z");
+  m[0]!.path.push("x");
+  expect(FULL[3]).toMatchObject({ options: ["a", "b", "c"] });
+  expect(FULL[0]!.path).toEqual(["f"]);
 });

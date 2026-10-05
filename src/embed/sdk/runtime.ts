@@ -36,23 +36,19 @@ const STATE_POLL_MS = 250; // play-state is polled (EmbedHandle has no subscribe
  *  transcription and stays green while the shipped line drops a field. */
 export function tunableManifest(tunables: LensTunable[]): TunableManifest[] {
   return tunables.map((t) => {
-    const m: TunableManifest = { path: t.path, label: t.label, group: t.group, type: t.type };
-    // ⚠ THIS FUNCTION IS THE WIRE, and it copies field by field: a property added to
-    // both `Rule` and `TunableManifest` but not to this line type-checks perfectly and
-    // arrives at every host as `undefined`. `tests/embed-manifest.test.ts` asserts this
-    // one at the FAR end for that reason.
+    // ★ spec/32 D3: every declared key, copied (never aliased). `path` is sliced for the same reason as `options`.
+    const m: TunableManifest = { path: t.path.slice(), label: t.label, group: t.group, type: t.type, id: t.id, target: t.target };
     if (t.public === true) m.public = true;
     if (t.type === "float" || t.type === "int") {
       if (typeof t.min === "number") m.min = t.min;
       if (typeof t.max === "number") m.max = t.max;
       if (typeof t.step === "number") m.step = t.step;
+      if (typeof t.unit === "string") m.unit = t.unit;
     }
+    if (t.type === "float" && t.curve !== undefined) m.curve = t.curve;
     if (t.type === "enum" && Array.isArray(t.options)) m.options = t.options.slice();
-    // `.slice()` for the same reason as `options` above: the host gets a copy, so
-    // mutating what it was handed cannot reach back into the lens's declaration.
-    if (t.type === "enum" && Array.isArray(t.public_options)) {
-      m.public_options = t.public_options.slice();
-    }
+    if (t.type === "enum" && Array.isArray(t.public_options)) m.public_options = t.public_options.slice();
+    if (t.type === "enum" && t.display !== undefined) m.display = t.display;
     return m;
   });
 }

@@ -57,6 +57,12 @@ export type TunableManifest = {
    *  hosts behaved before this field existed. `options` is still the validation set:
    *  this hides a choice from a menu, it does not make it unsettable. */
   public_options?: string[];
+  /** spec/32 D3 (S248): the lens's own declaration, carried whole. Additive — a guest built before S248 omits them. */
+  id?: string;
+  target?: "config" | "lens";
+  curve?: "linear" | "signed-cubic";
+  unit?: string;
+  display?: "segmented" | "list";
 };
 
 // host → guest
