@@ -7,12 +7,17 @@
  * RETRACT (S241–S242, the owner): any input inside the embed — pointer press, wheel, key — shows the controls and
  * restarts the idle timer; the host lens pokes on pointer moves. Nothing reads enter/leave or focus/blur (inside an
  * iframe a leave can be lost). PINS (strings: "paused", "flyout", "mode", or a substrate's own) hold them up. */
-import { SLOTS, validateDashboard, type Control, type Dashboard, type Slot, type UiMode } from "./decl";
+import { validateDashboard, validateFlyout, type Control, type Dashboard, type Slot, type UiMode } from "./decl";
 import { drawFooter, footerHeight, layoutFooter } from "./footer";
 
-export type ChromeEvents = { press: (id: string) => void };
-export type ControlPatch = { on?: boolean; state?: string; label?: string; icon?: string; hidden?: boolean; disabled?: boolean };
-export type FlyoutItem = { id: string; label: string; thumb?: HTMLCanvasElement; active: boolean };
+/** `input` is required as soon as a slider is mounted (a controls flyout is the only place one lives, S251): a slider
+ *  with nobody listening would be a dead control, so the chrome refuses it rather than render it (S249). */
+export type ChromeEvents = { press: (id: string) => void; input?: (id: string, value: number) => void };
+export type ControlPatch = { on?: boolean; state?: string; label?: string; icon?: string; hidden?: boolean; disabled?: boolean; value?: number };
+/** `title`: the item's tooltip (wacha's world picker shows each preset's note, S249) */
+export type FlyoutItem = { id: string; label: string; title?: string; thumb?: HTMLCanvasElement; active: boolean };
+/** A flyout body: a grid of pickable items, or controls (built like the slots' and in the chrome's id space while open). */
+export type Flyout = { title: string; items: FlyoutItem[]; onPick: (id: string) => void } | { title: string; controls: Control[] };
 export type Chrome = {
   root: HTMLDivElement;
   stage: HTMLDivElement;
@@ -27,7 +32,7 @@ export type Chrome = {
   setVignette: (v: number) => void;
   setMode: (m: UiMode) => void;
   setIdle: (seconds: number) => void;
-  openFlyout: (anchorId: string, f: { title: string; items: FlyoutItem[]; onPick: (id: string) => void }) => void;
+  openFlyout: (anchorId: string, f: Flyout) => void;
   closeFlyout: () => void;
   pin: (why: string, on: boolean) => void;
   poke: () => void;
@@ -119,6 +124,13 @@ const CSS = `
 .ec-root [data-direction="row"]{flex-direction:row}
 .ec-root [data-direction="column"]{flex-direction:column}
 .ec-custom{display:flex;align-items:center;justify-content:center}
+.ec-fly-controls{display:flex;flex-direction:column;gap:calc(10px*var(--s))}
+.ec-fly-controls>.ec-cell>*{flex:1 1 auto;min-width:0} /* a cell is a flex ROW: without this a slider shrinks to its label (S249) */
+.ec-slider{display:grid;grid-template-columns:1fr auto;gap:calc(4px*var(--s)) calc(8px*var(--s));align-items:center;color:#d8d2c7;
+  font:500 calc(12px*var(--s))/1.2 system-ui,sans-serif}
+.ec-slider output{font-variant-numeric:tabular-nums;color:#a39d92}
+.ec-slider input{grid-column:1/-1;width:100%;margin:0;height:calc(20px*var(--s));accent-color:var(--ec-accent);cursor:pointer}
+.ec-slider input:disabled{opacity:.35;cursor:default}
 `;
 
 /** The fixed order bars are appended in — swarm-swart-grid's (top-left, top-right, left, right, bottom), then the
@@ -127,13 +139,18 @@ const BAR_ORDER: readonly Slot[] = ["top-left", "top-right", "left", "right", "b
 const SIDE: Record<Slot, "left" | "right" | "top" | "bottom"> = {
   left: "left", "top-left": "left", "bottom-left": "left", right: "right", "top-right": "right", "bottom-right": "right", top: "top", bottom: "bottom",
 };
-const PATCH_KEYS: Record<Control["kind"], readonly (keyof ControlPatch)[]> = {
+/** what `set` accepts per kind — exported so a binding's patches are checked against this table, not a copy */
+export const CONTROL_PATCH_KEYS: Record<Control["kind"], readonly (keyof ControlPatch)[]> = {
   button: ["label", "icon", "hidden", "disabled"],
   toggle: ["on", "state", "label", "icon", "hidden", "disabled"],
-  cycle: ["state", "hidden", "disabled"],
+  cycle: ["state", "label", "hidden", "disabled"], // label: a bound cycle says "<label>: custom" when the knob sits on no state (S249)
   thumb: ["on", "label", "hidden", "disabled"],
   custom: ["label", "hidden"],
+  slider: ["value", "label", "hidden", "disabled"],
 };
+
+const sliderInput = (el: HTMLElement): HTMLInputElement | undefined =>
+  el.querySelector<HTMLInputElement>('input[type="range"]') ?? undefined;
 
 function sizeThumb(c: HTMLCanvasElement, scale: number): void {
   const dpr = Math.min(2, typeof devicePixelRatio === "number" ? devicePixelRatio : 1);
@@ -143,6 +160,10 @@ function sizeThumb(c: HTMLCanvasElement, scale: number): void {
 
 export function mountChrome(container: HTMLElement, dashboard: Dashboard, events: ChromeEvents): Chrome {
   const dash = validateDashboard(dashboard);           // ⚠ BEFORE any DOM: a refused declaration mounts nothing
+  const needsInput = (cs: readonly Control[]) => {
+    const s = cs.find((c) => c.kind === "slider");
+    if (s && !events.input) throw new Error(`chrome: slider "${s.id}" needs an input handler (events.input)`);
+  };
   const footH = dash.footer ? footerHeight(dash.footer.qr.rows.length) : 0;
   const style = document.createElement("style");
   style.textContent = CSS;
@@ -163,7 +184,7 @@ export function mountChrome(container: HTMLElement, dashboard: Dashboard, events
   stage.dataset.role = "stage";
   root.appendChild(stage);
 
-  type Entry = { decl: Control; slot: Slot; btn: HTMLElement; cell: HTMLDivElement; label: HTMLSpanElement; cleanup?: () => void };
+  type Entry = { decl: Control; slot: Slot; btn: HTMLElement; cell: HTMLDivElement; label: HTMLSpanElement; input?: HTMLInputElement | undefined; cleanup?: () => void };
   const entries = new Map<string, Entry>();
   const thumbs: Record<string, HTMLCanvasElement> = {};
   const vignettes: HTMLDivElement[] = [];
@@ -192,7 +213,7 @@ export function mountChrome(container: HTMLElement, dashboard: Dashboard, events
       cell.append(btn, label);
       if (c.hidden) cell.hidden = true;
       bar.appendChild(cell);
-      const e: Entry = { decl: c, slot, btn, cell, label };
+      const e: Entry = { decl: c, slot, btn, cell, label, input: sliderInput(btn) };
       if (c.kind === "custom") e.cleanup = c.mount(btn);
       entries.set(c.id, e);
     }
@@ -218,6 +239,25 @@ export function mountChrome(container: HTMLElement, dashboard: Dashboard, events
   container.appendChild(root);
 
   function buildControl(c: Control): HTMLElement {
+    if (c.kind === "slider") {
+      const el = document.createElement("label");
+      el.className = "ec-slider";
+      el.dataset.role = c.id;
+      const name = document.createElement("span");
+      name.className = "ec-slider-name";
+      name.textContent = c.label;
+      const out = document.createElement("output");
+      const inp = document.createElement("input");
+      inp.type = "range";
+      inp.min = String(c.min); inp.max = String(c.max); inp.step = String(c.step);
+      inp.setAttribute("aria-label", c.label);
+      out.textContent = inp.value;
+      if (c.disabled) inp.disabled = true;
+      // ⚠ the output follows the USER's drag here and the substrate's value in set(); the knob itself is never held
+      inp.addEventListener("input", () => { out.textContent = inp.value; events.input!(c.id, Number(inp.value)); });
+      el.append(name, out, inp);
+      return el;
+    }
     if (c.kind === "custom") {
       const el = document.createElement("div");
       el.className = "ec-custom";
@@ -250,6 +290,8 @@ export function mountChrome(container: HTMLElement, dashboard: Dashboard, events
     e.btn.setAttribute("aria-label", text);
     e.btn.title = text;
     e.label.textContent = text;
+    const name = e.btn.querySelector(".ec-slider-name");
+    if (name && name !== e.label) name.textContent = text;
   };
 
   // --- retract (verbatim logic from swarm-swart-grid's chrome; the state is now the attribute)
@@ -270,9 +312,13 @@ export function mountChrome(container: HTMLElement, dashboard: Dashboard, events
   arm();
 
   let openAnchor: HTMLElement | null = null;
+  /** the ids a controls flyout registered: they leave the id space when it closes (set() on them then throws) */
+  let flyIds: string[] = [];
+  const dropFlyControls = () => { for (const id of flyIds) entries.delete(id); flyIds = []; };
   const closeFlyout = () => {
     fly.dataset.open = "false";
     fly.replaceChildren();
+    dropFlyControls();
     openAnchor = null;
     pins.delete("flyout");
     arm();
@@ -305,7 +351,7 @@ export function mountChrome(container: HTMLElement, dashboard: Dashboard, events
     set(id, patch) {
       const e = entry(id);
       for (const k of Object.keys(patch) as (keyof ControlPatch)[]) {
-        if (!PATCH_KEYS[e.decl.kind].includes(k)) throw new Error(`chrome: "${id}" (${e.decl.kind}) has no ${k}`);
+        if (!CONTROL_PATCH_KEYS[e.decl.kind].includes(k)) throw new Error(`chrome: "${id}" (${e.decl.kind}) has no ${k}`);
       }
       if (patch.hidden !== undefined) e.cell.hidden = patch.hidden;
       if (patch.disabled !== undefined && e.btn instanceof HTMLButtonElement) e.btn.disabled = patch.disabled;
@@ -322,6 +368,14 @@ export function mountChrome(container: HTMLElement, dashboard: Dashboard, events
         relabel(e, st.label);
       }
       if (patch.label !== undefined) relabel(e, patch.label);
+      if (patch.value !== undefined && e.input) {
+        // ⚠ NO input event: a programmatic set is the reverse channel, not a user write — firing would loop back
+        // through a binding into the knob it just read (S249)
+        e.input.value = String(patch.value);
+        const out = e.btn.querySelector("output");
+        if (out) out.textContent = e.input.value;
+      }
+      if (patch.disabled !== undefined && e.input) e.input.disabled = patch.disabled;
     },
     setScale(sc) { root.style.setProperty("--s", String(sc)); for (const c of Object.values(thumbs)) sizeThumb(c, sc); },
     setVignette(v) { root.style.setProperty("--v", String(v)); },
@@ -333,10 +387,35 @@ export function mountChrome(container: HTMLElement, dashboard: Dashboard, events
     openFlyout(anchorId, f) {
       const anchor = entry(anchorId);
       if (openAnchor === anchor.btn) { closeFlyout(); return; } // the same button toggles it shut
+      // ⚠ validated BEFORE the open flyout is touched, against the ids the dashboard holds (not the outgoing flyout's);
+      // every level's keys are refused, a picker's and its items' included (S251)
+      validateFlyout(f, new Set([...entries.keys()].filter((id) => !flyIds.includes(id))));
+      if ("controls" in f) needsInput(f.controls);
       fly.replaceChildren();
+      dropFlyControls();
       fly.dataset.side = SIDE[anchor.slot];
       const h = document.createElement("h3");
       h.textContent = f.title;
+      if ("controls" in f) {
+        const body = document.createElement("div");
+        body.className = "ec-fly-controls";
+        for (const c of f.controls) {
+          const el = buildControl(c);
+          const cell = document.createElement("div");
+          cell.className = "ec-cell";
+          cell.appendChild(el);
+          const name = el.querySelector<HTMLSpanElement>(".ec-slider-name") ?? document.createElement("span");
+          entries.set(c.id, { decl: c, slot: anchor.slot, btn: el, cell, label: name, input: sliderInput(el) });
+          flyIds.push(c.id);
+          body.appendChild(cell);
+        }
+        fly.append(h, body);
+        fly.dataset.open = "true";
+        openAnchor = anchor.btn;
+        pins.add("flyout");
+        show();
+        return;
+      }
       const grid = document.createElement("div");
       grid.className = "ec-fly-grid";
       for (const it of f.items) {
@@ -345,6 +424,7 @@ export function mountChrome(container: HTMLElement, dashboard: Dashboard, events
         b.className = "ec-item";
         b.dataset.id = it.id;
         b.dataset.on = String(it.active);
+        if (it.title !== undefined) b.title = it.title;
         if (it.thumb) b.appendChild(it.thumb);
         else { const g = document.createElement("div"); g.className = "ec-glyph"; g.textContent = "↻"; b.appendChild(g); }
         const l = document.createElement("span");

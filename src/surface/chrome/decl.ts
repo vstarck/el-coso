@@ -22,7 +22,10 @@ export type ToggleControl = Common & { kind: "toggle"; icon: string; states?: Cy
 export type CycleControl = Common & { kind: "cycle"; states: CycleState[]; big?: boolean };
 export type ThumbControl = Common & { kind: "thumb" };
 export type CustomControl = CustomCommon & { kind: "custom"; mount: (el: HTMLElement) => () => void };
-export type Control = ButtonControl | ToggleControl | CycleControl | ThumbControl | CustomControl;
+/** A range control (S249, wacha's tune flyout). It reports `input` events; its value is set only by the substrate
+ *  (`set(id, { value })`), so it never holds a second copy of a knob (spec/32 §2.3). */
+export type SliderControl = Common & { kind: "slider"; min: number; max: number; step: number };
+export type Control = ButtonControl | ToggleControl | CycleControl | ThumbControl | CustomControl | SliderControl;
 type Kind = Control["kind"];
 
 export type SlotDecl = { controls: Control[]; direction?: "row" | "column"; vignette?: boolean };
@@ -49,6 +52,7 @@ export const CONTROL_KEYS = {
   cycle: [...COMMON, "states", "big"],
   thumb: [...COMMON],
   custom: ["kind", "id", "label", "hidden", "mount"],
+  slider: [...COMMON, "min", "max", "step"],
 } as const satisfies { [K in Kind]: readonly (keyof Extract<Control, { kind: K }>)[] };
 // the reverse direction: a key on the TYPE that no list carries is a compile error here
 type Uncovered = { [K in Kind]: Exclude<keyof Extract<Control, { kind: K }>, (typeof CONTROL_KEYS)[K][number]> }[Kind];
@@ -114,6 +118,13 @@ function validateControl(c: unknown, path: string, ids: Set<string>): void {
     throw new DashboardError(path, "a toggle's states, when given, need at least one");
   }
   if (kind === "cycle" && (!Array.isArray(o.states) || o.states.length === 0)) throw new DashboardError(path, "a cycle needs at least one state");
+  if (kind === "slider") {
+    for (const k of ["min", "max", "step"] as const) {
+      if (typeof o[k] !== "number" || !Number.isFinite(o[k])) throw new DashboardError(`${path}.${k}`, "not a finite number");
+    }
+    if (!((o.step as number) > 0)) throw new DashboardError(`${path}.step`, "not a positive number");
+    if (!((o.min as number) < (o.max as number))) throw new DashboardError(path, `min ${String(o.min)} is not below max ${String(o.max)}`);
+  }
   if (Array.isArray(o.states)) {
     const seen = new Set<string>();
     o.states.forEach((s, i) => {
@@ -140,7 +151,12 @@ export function validateDashboard(d: Dashboard): Dashboard {
     if (s.direction !== undefined && s.direction !== "row" && s.direction !== "column") throw new DashboardError(`${p}.direction`, `"${String(s.direction)}" is not row|column`);
     bool(s.vignette, `${p}.vignette`);
     if (s.vignette === true && !VIGNETTE_SLOTS.includes(slot)) throw new DashboardError(p, `no vignette is defined for "${slot}" (only ${VIGNETTE_SLOTS.join(", ")})`);
-    s.controls.forEach((c, i) => validateControl(c, `${p}.controls[${i}]`, ids));
+    s.controls.forEach((c, i) => {
+      validateControl(c, `${p}.controls[${i}]`, ids);
+      // ⚠ S251: a slot slider had no reader — its cell carried two labels and its layout was never exercised. Lift
+      // this with the first consumer that needs one, and its layout row in dev/surface-chrome-smoke
+      if ((c as Control).kind === "slider") throw new DashboardError(`${p}.controls[${i}]`, "a slider lives in a controls flyout, not a slot");
+    });
   }
   const b = keysOnly(o.behaviour, BEHAVIOUR_KEYS, "behaviour");
   const idle = b.idleSeconds;
@@ -173,6 +189,45 @@ export function validateDashboard(d: Dashboard): Dashboard {
     });
   }
   return d;
+}
+
+/** Controls that live OUTSIDE the slots (a `controls` flyout's body) get the same per-control refusals, and an id
+ *  already taken by the dashboard is a duplicate (S249: the flyout's controls share the chrome's id space). */
+export function validateControls(controls: unknown, path: string, taken: ReadonlySet<string>): Control[] {
+  if (!Array.isArray(controls)) throw new DashboardError(`${path}.controls`, "not an array");
+  const ids = new Set(taken);
+  controls.forEach((c, i) => validateControl(c, `${path}.controls[${i}]`, ids));
+  return controls as Control[];
+}
+
+const FLYOUT_PICK_KEYS = ["title", "items", "onPick"] as const;
+const FLYOUT_CONTROLS_KEYS = ["title", "controls"] as const;
+const FLYOUT_ITEM_KEYS = ["id", "label", "title", "thumb", "active"] as const;
+/** A flyout body, refused on its own keys at every level like the dashboard (S251): a typo'd `onpick` or an item's
+ *  `tittle` was silently ignored. `taken`: the ids the dashboard holds, for a controls body. */
+export function validateFlyout(f: unknown, taken: ReadonlySet<string>): void {
+  const o = obj(f, "flyout");
+  if ("controls" in o) {
+    keysOnly(o, FLYOUT_CONTROLS_KEYS, "flyout");
+    str(o.title, "flyout.title");
+    validateControls(o.controls, "flyout", taken);
+    return;
+  }
+  keysOnly(o, FLYOUT_PICK_KEYS, "flyout");
+  str(o.title, "flyout.title");
+  if (typeof o.onPick !== "function") throw new DashboardError("flyout.onPick", "not a function");
+  if (!Array.isArray(o.items)) throw new DashboardError("flyout.items", "not an array");
+  const seen = new Set<string>();
+  o.items.forEach((it, i) => {
+    const p = `flyout.items[${i}]`;
+    const io = keysOnly(it, FLYOUT_ITEM_KEYS, p);
+    const id = str(io.id, `${p}.id`);
+    if (seen.has(id)) throw new DashboardError(p, `duplicate id "${id}"`);
+    seen.add(id);
+    str(io.label, `${p}.label`);
+    if (io.title !== undefined) str(io.title, `${p}.title`);
+    if (typeof io.active !== "boolean") throw new DashboardError(`${p}.active`, "not a boolean");
+  });
 }
 
 export function controlIds(d: Dashboard): string[] {

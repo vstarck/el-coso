@@ -1,7 +1,7 @@
 /* spec/32 §5.1, §6 — the dashboard declaration. Every refusal is pinned on its REASON (CLAUDE.md §C: asserting that
  * it threw is not asserting why). */
 import { describe, expect, test } from "vitest";
-import { controlIds, defaultDashboard, extend, validateDashboard, type Dashboard } from "@/surface/chrome";
+import { controlIds, defaultDashboard, extend, validateControls, validateDashboard, validateFlyout, type Dashboard } from "@/surface/chrome";
 
 const base = (): Dashboard => ({ slots: {}, behaviour: { idleSeconds: 2.5 }, theme: {}, footer: null });
 const btn = (id: string) => ({ kind: "button" as const, id, label: id, icon: "<svg/>" });
@@ -117,4 +117,46 @@ describe("toggle states", () => {
     expect(() => validateDashboard(tog([{ id: "melt", icon: "<svg/>", label: "melt" }, { id: "melt", icon: "<svg/>", label: "x" }]) as never)).toThrow(/states\[1\]: duplicate state "melt"/);
     expect(() => validateDashboard(tog([]) as never)).toThrow(/a toggle's states, when given, need at least one/);
   });
+});
+
+describe("slider", () => {
+  const s = { kind: "slider", id: "s", label: "s", min: 0, max: 1, step: 0.1 };
+  const sl = (o: object) => validateControls([{ ...s, ...o }], "flyout", new Set());
+  test("a slider validates", () => expect(() => sl({})).not.toThrow());
+  test("min must be below max", () => expect(() => sl({ min: 2 })).toThrow(/controls\[0\]: min 2 is not below max 1/));
+  test("step must be positive", () => expect(() => sl({ step: 0 })).toThrow(/controls\[0\]\.step: not a positive number/));
+  test("an unknown slider key is refused", () => expect(() => sl({ curve: "x" })).toThrow(/controls\[0\]: unknown key "curve"/));
+  test("a missing bound is refused by name", () => expect(() => sl({ max: undefined })).toThrow(/controls\[0\]\.max: not a finite number/));
+  // S251 (deferred minor of S249): a slot slider had no reader — its cell carried two labels and its layout was never
+  // exercised. Refused until a consumer needs one; the flyout is where wacha's live
+  test("a slider in a SLOT is refused, on its reason", () => {
+    expect(() => validateDashboard({ ...base(), slots: { left: { controls: [s] } } } as never))
+      .toThrow(/slots\.left\.controls\[0\]: a slider lives in a controls flyout, not a slot/);
+  });
+});
+
+describe("validateFlyout — a flyout's own keys are refused at every level (S251)", () => {
+  const item = { id: "w", label: "w", active: false };
+  const pick = { title: "t", items: [item], onPick: () => {} };
+  const cases: [string, unknown, RegExp][] = [
+    ["an unknown key on a picker flyout", { ...pick, onpick: () => {} }, /flyout: unknown key "onpick"/],
+    ["an unknown key on a controls flyout", { title: "t", controls: [], items: [] }, /flyout: unknown key "items"/],
+    ["an unknown item key (a typo)", { ...pick, items: [{ ...item, tittle: "x" }] }, /flyout\.items\[0\]: unknown key "tittle"/],
+    ["an item whose active is not a boolean", { ...pick, items: [{ ...item, active: "false" }] }, /flyout\.items\[0\]\.active: not a boolean/],
+    ["a picker with no onPick", { title: "t", items: [] }, /flyout\.onPick: not a function/],
+    ["a duplicate item id", { ...pick, items: [item, item] }, /flyout\.items\[1\]: duplicate id "w"/],
+  ];
+  for (const [name, f, re] of cases) test(name, () => expect(() => validateFlyout(f, new Set())).toThrow(re));
+  test("a valid picker and a valid controls flyout pass", () => {
+    expect(() => validateFlyout({ ...pick, items: [{ ...item, title: "a note" }] }, new Set())).not.toThrow();
+    expect(() => validateFlyout({ title: "t", controls: [{ kind: "slider", id: "s", label: "s", min: 0, max: 1, step: 0.1 }] }, new Set())).not.toThrow();
+  });
+});
+
+describe("validateControls — a flyout's controls get the dashboard's refusals (S249 ruling)", () => {
+  const s = { kind: "slider", id: "s", label: "s", min: 0, max: 1, step: 0.1 };
+  test("valid controls pass", () => expect(() => validateControls([s], "flyout", new Set(["play"]))).not.toThrow());
+  test("an id the dashboard already holds is refused", () => expect(() => validateControls([{ ...s, id: "play" }], "flyout", new Set(["play"]))).toThrow(/flyout\.controls\[0\]: duplicate id "play"/));
+  test("a slider's keys are walked", () => expect(() => validateControls([{ ...s, min: 3 }], "flyout", new Set())).toThrow(/flyout\.controls\[0\]: min 3 is not below max 1/));
+  test("the caller's id set is not mutated", () => { const ids = new Set<string>(); validateControls([s], "flyout", ids); expect(ids.size).toBe(0); });
 });
