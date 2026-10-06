@@ -25,6 +25,9 @@ export const meta = {
     "Tron light-cycles — leave a deadly trail and outlast the AI riders.",
   defaultPuzzle: "open-arena",
   keyframePeriod: 60,
+  // the gallery card (S251): FILES in ./preview/, filmed by la-cosa dev/capture-preview and served at /previews/<id>/
+  // (vite-plugins servePreviews) — URLs, never imports: an import lands in a bundle
+  thumbnail: "/previews/tron/still.webp",
 } as const;
 
 export * from "./engine";

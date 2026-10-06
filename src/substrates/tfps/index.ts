@@ -25,6 +25,10 @@ export const meta = {
     "A terminal FPS — an ASCII raycaster with a self-playing patrol bot, drawn in colored glyphs.",
   defaultPuzzle: "e1m1",
   keyframePeriod: 120,
+  // the gallery card (S251): FILES in ./preview/, filmed by la-cosa dev/capture-preview and served at /previews/<id>/
+  // (vite-plugins servePreviews) — URLs, never imports: an import lands in a bundle
+  thumbnail: "/previews/tfps/still.webp",
+  preview: "/previews/tfps/clip.webm",
 } as const;
 
 export * from "./engine";

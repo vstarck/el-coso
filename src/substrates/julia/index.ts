@@ -32,6 +32,10 @@ export const meta = {
   tags: ["fractal", "math"],
   defaultPuzzle: "tour",
   keyframePeriod: 100,
+  // the gallery card (S251): FILES in ./preview/, filmed by la-cosa dev/capture-preview and served at /previews/<id>/
+  // (vite-plugins servePreviews) — URLs, never imports: an import lands in a bundle
+  thumbnail: "/previews/julia/still.webp",
+  preview: "/previews/julia/clip.webm",
 } as const;
 
 export * from "./engine";

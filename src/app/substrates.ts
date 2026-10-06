@@ -83,9 +83,15 @@ export type SubstrateEntry = {
   // Hand-authored tags (theme / genre), appended after the auto-derived
   // render-target + cadence tags. Omitted ⇒ auto tags only.
   tags?: readonly string[];
-  // Square thumbnail image URL (Vite-imported asset / public path). Omitted
-  // ⇒ the gallery renders a styled accent-colored placeholder tile.
+  // Square thumbnail image URL. Omitted ⇒ the gallery renders a styled
+  // accent-colored placeholder tile. ⚠ A URL STRING to a file shipped beside
+  // the code (`/previews/<id>/…`, served by vite-plugins' servePreviews), never
+  // an import: an import lands in a bundle (the embed build base64-inlines every import, the app build any under 4 KB), so an imported
+  // image would land in the substrate's embed bundle as base64 (S251).
   thumbnail?: string;
+  // A short looping clip the gallery plays muted on hover/focus (the still is
+  // its poster, so make the still the clip's first frame). Same rule: a URL.
+  preview?: string;
   // Extra gallery cards for the same substrate (puzzle/lens variants).
   galleryVariants?: readonly GalleryVariant[];
 };
@@ -110,6 +116,7 @@ export type SubstrateModule = {
     description?: string;
     tags?: readonly string[];
     thumbnail?: string;
+    preview?: string;
     galleryVariants?: readonly GalleryVariant[];
   };
 };
@@ -143,6 +150,7 @@ function buildEntry(mod: SubstrateModule): SubstrateEntry {
     ...(m.description ? { description: m.description } : {}),
     ...(m.tags ? { tags: m.tags } : {}),
     ...(m.thumbnail ? { thumbnail: m.thumbnail } : {}),
+    ...(m.preview ? { preview: m.preview } : {}),
     ...(m.galleryVariants ? { galleryVariants: m.galleryVariants } : {}),
   };
 }
@@ -243,6 +251,7 @@ export type GalleryCard = {
   description: string;
   tags: string[];
   thumbnail: string | undefined;
+  preview: string | undefined;
   accent: string;
 };
 
@@ -275,6 +284,7 @@ function makeCard(s: SubstrateEntry, v?: GalleryVariant): GalleryCard {
     description: v?.description ?? s.description ?? "",
     tags: [...(lens ? autoTagsForLens(lens) : []), ...(s.tags ?? [])],
     thumbnail: s.thumbnail,
+    preview: s.preview,
     accent: lens ? getLensTheme(lens).accent : "#fbbf24",
   };
 }

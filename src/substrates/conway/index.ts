@@ -27,6 +27,10 @@ export const meta = {
     "Conway's Game of Life — a zero-input cellular automaton; you only seed it, then watch.",
   defaultPuzzle: "r-pentomino-large",
   keyframePeriod: 100,
+  // the gallery card (S251): FILES in ./preview/, filmed by la-cosa dev/capture-preview and served at /previews/<id>/
+  // (vite-plugins servePreviews) — URLs, never imports: an import lands in a bundle
+  thumbnail: "/previews/conway/still.webp",
+  preview: "/previews/conway/clip.webm",
 } as const;
 
 export * from "./engine";

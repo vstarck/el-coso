@@ -10,12 +10,6 @@ import { ttsBundle, ttsBttfAdapter, parseLevel } from "./engine";
 import { ttsLens } from "./lens";
 import classic from "./puzzles/classic.json";
 import small from "./puzzles/small.json";
-// Gallery thumbnail — the app build resolves this import to a hashed asset URL;
-// the embed build (vite.embed.config.ts) rewrites it to a bare basename and the
-// export script copies the file into dist-embed/<id>/, so embeds carry no base64.
-// To give another substrate a real card image, drop a square image in its
-// package's `assets/` and import it the same way into `meta.thumbnail`.
-import thumbnail from "./assets/thumbnail.webp";
 
 export const bundle = ttsBundle;
 export const adapter = ttsBttfAdapter;
@@ -28,7 +22,11 @@ export const meta = {
   name: "tts",
   description:
     "The simplest possible Tetris, dressed as a fish-shell terminal session.",
-  thumbnail,
+  // the gallery card (S251): a still and a hover loop, FILES in ./preview/ filmed by dev/capture-preview (la-cosa) and
+  // served at /previews/<id>/ by vite-plugins' servePreviews — URLs, never imports (an import lands in a bundle). This
+  // replaced the hand-made `assets/thumbnail.webp` and the embed build's carve-out for it.
+  thumbnail: "/previews/tts/still.webp",
+  preview: "/previews/tts/clip.webm",
   defaultPuzzle: "classic",
   keyframePeriod: 100,
 } as const;

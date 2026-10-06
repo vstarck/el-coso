@@ -90,6 +90,13 @@ export type EmbedHandle = {
   /** Restart the run from its initial state (lens `reset` if it has one, else a
    *  generic history reset). */
   reset(): void;
+  /** Advance exactly one tick and stay paused — the lens's own `step` (S251; the
+   *  gallery-preview capturer steps a run deterministically through this). */
+  step(): void;
+  /** The lens's own picture of what it is showing — `MountedLens.snapshot` — or
+   *  null when the lens declines one. The canvas is the LIVE one: copy it before
+   *  the next frame if you keep it (S251). */
+  snapshot(): HTMLCanvasElement | null;
   /** Enable/disable self-looping (substrates that honour `config.loop`). */
   setLoop(on: boolean): void;
   /** Read a lens/config tunable by dotted path (spec/25). */
@@ -209,6 +216,8 @@ export function mountSubstrate(
       if (lensReset) lensReset();
       else historyReset(history);
     },
+    step: () => mounted.tree.root.step(),
+    snapshot: () => mounted.tree.root.snapshot?.() ?? null,
     setLoop,
     getTunable: (path) => mounted.tree.root.getTunable(path),
     setTunable: (path, value) => mounted.tree.root.setTunable(path, value),

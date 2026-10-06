@@ -3,11 +3,13 @@
  * (square thumbnail / title / description / tag chips). Clicking a card
  * navigates to that substrate (optionally a puzzle/lens variant) and closes.
  *
- * Thumbnails are styled accent-colored placeholders today; a card upgrades to
- * a real image as soon as its substrate declares `meta.thumbnail`.
+ * Thumbnails are styled accent-colored placeholders; a card upgrades to a real
+ * image as soon as its substrate declares `meta.thumbnail`, and plays
+ * `meta.preview` (a muted loop) while hovered or focused — mounted only then,
+ * so opening the gallery fetches no clip, and never under reduced motion (S251).
  */
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { LayoutGrid, X } from "lucide-react";
 import { galleryCards, SUBSTRATES, type GalleryCard } from "@/app/substrates";
@@ -141,10 +143,16 @@ function GalleryCardTile({
   active: boolean;
   onPick: (card: GalleryCard) => void;
 }) {
+  const [hot, setHot] = useState(false);
   return (
     <button
       type="button"
       onClick={() => onPick(card)}
+      onMouseEnter={() => setHot(true)}
+      onMouseLeave={() => setHot(false)}
+      onFocus={() => setHot(true)}
+      onBlur={() => setHot(false)}
+      data-card={card.key}
       className="group"
       style={{
         display: "flex",
@@ -157,7 +165,7 @@ function GalleryCardTile({
         border: `1px solid ${active ? "var(--accent)" : "var(--border)"}`,
       }}
     >
-      <Thumbnail card={card} />
+      <Thumbnail card={card} hot={hot} />
       <div
         className="font-mono"
         style={{
@@ -202,9 +210,15 @@ function GalleryCardTile({
   );
 }
 
+const reducedMotion = (): boolean =>
+  typeof window !== "undefined" && typeof window.matchMedia === "function" &&
+  window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
 // Square thumbnail — the substrate's image when declared, otherwise a styled
-// accent-colored placeholder with the title monogram.
-function Thumbnail({ card }: { card: GalleryCard }) {
+// accent-colored placeholder with the title monogram. While `hot`, a declared
+// clip plays over it (its poster is the still, so the swap does not flash).
+function Thumbnail({ card, hot }: { card: GalleryCard; hot: boolean }) {
+  const play = hot && card.preview !== undefined && !reducedMotion();
   const monogram = card.title.replace(/[^a-z0-9]/gi, "").slice(0, 2).toUpperCase();
   return (
     <div
@@ -223,7 +237,18 @@ function Thumbnail({ card }: { card: GalleryCard }) {
         justifyContent: "center",
       }}
     >
-      {card.thumbnail ? (
+      {play ? (
+        <video
+          src={card.preview}
+          {...(card.thumbnail ? { poster: card.thumbnail } : {})}
+          autoPlay
+          muted
+          loop
+          playsInline
+          aria-label={card.title}
+          style={{ width: "100%", height: "100%", objectFit: "cover" }}
+        />
+      ) : card.thumbnail ? (
         <img
           src={card.thumbnail}
           alt={card.title}

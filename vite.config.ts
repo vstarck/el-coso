@@ -2,10 +2,12 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "node:path";
-import { serveEmbeds } from "./vite-plugins";
+import { serveEmbeds, servePreviews } from "./vite-plugins";
 
 export default defineConfig({
-  plugins: [react(), serveEmbeds()],
+  // servePreviews: a substrate's gallery still + hover clip (`src/substrates/<id>/preview/`) at /previews/<id>/ —
+  // served in dev and `vite preview`, copied by a build; never imported, so never in a bundle (S251)
+  plugins: [react(), serveEmbeds(), servePreviews([path.resolve(__dirname, "src/substrates")])],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "src"),
