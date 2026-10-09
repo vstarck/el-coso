@@ -25,6 +25,10 @@ export const meta = {
     "A bouncing DVD logo — one autonomous particle, read through stacked velocity / acceleration overlays.",
   defaultPuzzle: "classic-dvd",
   keyframePeriod: 100,
+  // the gallery card (S260): FILES in ./preview/, filmed by la-cosa dev/capture-preview and served at /previews/<id>/
+  // (vite-plugins servePreviews) — URLs, never imports: an import lands in a bundle
+  thumbnail: "/previews/dvd-screensaver/still.webp",
+  preview: "/previews/dvd-screensaver/clip.webm",
 } as const;
 
 export * from "./engine";
