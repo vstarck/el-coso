@@ -25,6 +25,7 @@ import type { SubstrateBundle } from "../engine/types";
 import type { Lens, RenderSize, RenderTarget } from "@/lenses/types";
 import { getLensTheme, hasFeature } from "@/lenses/types";
 import type { ChromePanelsConfig } from "./store";
+import type { ConfigCheck } from "@/lenses/config-write";
 
 // A second card for the same substrate in the gallery, pinned to a specific
 // puzzle and/or lens — so one substrate can appear as several entries
@@ -66,6 +67,7 @@ export type SubstrateEntry = {
   bundle: SubstrateBundle<any, any, any>;
   adapter: AdapterOrFactory;
   parseLevel: (json: any) => any;
+  checkConfig?: ConfigCheck;
   // Per-substrate chrome panel config — which panels are available + which
   // default-open. Omitted ⇒ all panels available and open (legacy default).
   chrome?: ChromePanelsConfig;
@@ -105,6 +107,11 @@ export type SubstrateModule = {
   lenses: Record<string, Lens<any, any, any, any>>;
   defaultLensId: string;
   parseLevel: (json: any) => any;
+  /** The level's whole-config invariants (S263), run on every config-target write — mount, Rules rail, a lens's own
+   *  setter — at where the write would land (`lenses/config-write.ts`). Throws, naming the violation. Optional: a
+   *  substrate whose knobs are each safe alone has nothing to say beyond their declarations. ⚠ Found by NAME: a
+   *  package's `export *` can supply it (truco's does). */
+  checkConfig?: ConfigCheck;
   puzzles: unknown[];
   meta: {
     id: string;
@@ -142,6 +149,7 @@ function buildEntry(mod: SubstrateModule): SubstrateEntry {
     bundle: mod.bundle,
     adapter: mod.adapter,
     parseLevel: mod.parseLevel,
+    ...(mod.checkConfig ? { checkConfig: mod.checkConfig } : {}),
     keyframePeriod: m.keyframePeriod,
     // Conditional spread, not `chrome: m.chrome` — exactOptionalPropertyTypes
     // forbids assigning `undefined` to the optional fields.

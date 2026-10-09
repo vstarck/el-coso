@@ -14,7 +14,7 @@
  * lens switching goes through `setLens` and re-mounts via bumpSession.
  */
 
-import { createHistory, type History } from "../history";
+import { createHistory, levelSeed, type History } from "../history";
 import { clearThumbnailCache } from "./lib/thumbnail";
 import {
   findPuzzle,
@@ -63,7 +63,7 @@ function buildHistoryFor(substrate: SubstrateEntry, puzzle: PuzzleEntry) {
   return createHistory({
     bundle: substrate.bundle,
     config,
-    rng_seed: typeof config.rng_seed === "number" ? config.rng_seed : 1,
+    rng_seed: levelSeed(config),
     adapter,
     keyframe_period: substrate.keyframePeriod,
   });

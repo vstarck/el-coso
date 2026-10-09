@@ -15,6 +15,8 @@ import { Settings, X } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { historyEditConfig } from "@/history";
 import { session } from "@/app/session";
+import { SUBSTRATE_BY_ID } from "@/app/substrates";
+import { checkConfigWrites, type ConfigWrite } from "@/lenses/config-write";
 import { useStore } from "@/app/store";
 import type { LensTunable, TunableValue } from "@/lenses/types";
 import { buildDump, planApply } from "./config-io";
@@ -29,6 +31,8 @@ export function RulesRail({ onClose }: { onClose?: () => void }) {
   // own setTunable internally, or by any other code calling setTunable).
   const [, bumpUI] = useState(0);
   const openRulesGroups = useStore((s) => s.openRulesGroups);
+  // A refused knob write (S263): shown here, not thrown out of the event handler where nobody reads it
+  const [refusal, setRefusal] = useState<string | null>(null);
   const toggleRulesGroup = useStore((s) => s.toggleRulesGroup);
 
   useEffect(() => {
@@ -83,6 +87,15 @@ export function RulesRail({ onClose }: { onClose?: () => void }) {
         onToggleGroup={toggleRulesGroup}
         onClose={onClose}
       />
+      {refusal !== null && (
+        <div
+          className="glass-med rounded-panel shrink-0 px-3 py-2 font-mono text-[length:var(--text-xs)]"
+          style={{ color: "var(--accent)" }}
+          data-rules-refusal
+        >
+          {refusal}
+        </div>
+      )}
       <div className="flex min-h-0 flex-col gap-2 overflow-y-auto">
 
       {groups.length === 0 && (
@@ -113,7 +126,15 @@ export function RulesRail({ onClose }: { onClose?: () => void }) {
               key={t.id}
               rule={t}
               value={readTunable(t)}
-              onChange={(v) => writeTunable(t, v)}
+              onChange={(v) => {
+                try {
+                  writeTunable(t, v);
+                  setRefusal(null);
+                } catch (e) {
+                  setRefusal(`${t.id} refused — ${(e as Error).message}`);
+                  bumpUI((b) => b + 1); // the control re-reads the value that stands
+                }
+              }}
             />
           ))}
         </GroupPanel>
@@ -291,13 +312,33 @@ function ConfigPanel({ tunables }: { tunables: readonly LensTunable[] }) {
       return;
     }
     const byId = new Map(tunables.map((t) => [t.id, t]));
+    // ★ THE CONFIG HALF IS JUDGED AS ONE BATCH, BEFORE ANY WRITE (S263): where the pasted world LANDS, not each knob
+    // in paste order — two knobs legal together can be illegal one at a time — and a refusal applies nothing.
+    const configWrites: ConfigWrite[] = plan.writes.flatMap((w) => {
+      const t = byId.get(w.id);
+      return t && t.target === "config" ? [{ tunable: t, value: w.value }] : [];
+    });
+    try {
+      checkConfigWrites(session.history.config, configWrites, activeCheck());
+    } catch (e) {
+      setStatus({ kind: "bad", lines: [`refused — ${(e as Error).message}`, "nothing was applied"] });
+      return;
+    }
+    const problems = [...plan.problems];
+    let applied = 0;
     for (const w of plan.writes) {
       const t = byId.get(w.id);
-      if (t) writeTunable(t, w.value);
+      if (!t) continue;
+      try {
+        applyTunable(t, w.value);
+        applied++;
+      } catch (e) {
+        problems.push(`"${w.id}" refused — ${(e as Error).message}`); // a lens-target refusal, from the lens itself
+      }
     }
     setStatus({
-      kind: plan.problems.length > 0 ? "bad" : "ok",
-      lines: [`applied ${plan.writes.length} knobs`, ...plan.problems],
+      kind: problems.length > 0 ? "bad" : "ok",
+      lines: [`applied ${applied} of ${plan.writes.length} knobs`, ...problems],
     });
   };
 
@@ -395,7 +436,20 @@ function readTunable(t: LensTunable): TunableValue | undefined {
   return getByPath(session.history.config, t.path);
 }
 
+/** the active substrate's whole-config invariants, if it declares any (S263) */
+function activeCheck() {
+  return SUBSTRATE_BY_ID[session.active_substrate_id]?.checkConfig;
+}
+
+/** A knob write from the rail: a config one is CHECKED first (declaration + the substrate's checkConfig, the same
+ *  check the embed mount and a lens's own setter take, `lenses/config-write.ts`); throws, naming the refusal. */
 function writeTunable(t: LensTunable, value: TunableValue): void {
+  if (t.target === "config") checkConfigWrites(session.history.config, [{ tunable: t, value }], activeCheck());
+  applyTunable(t, value);
+}
+
+/** The write itself, unchecked — only for a value `checkConfigWrites` has already passed. */
+function applyTunable(t: LensTunable, value: TunableValue): void {
   if (t.target === "lens") {
     // Lens auto-notifies its subscribers; our useEffect listener bumps
     // local UI state in response.

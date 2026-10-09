@@ -11,7 +11,7 @@
  * substrate barrel (which pulls the full-app lens wrapper and the store).
  */
 
-import { createHistory } from "@/history";
+import { createHistory, levelSeed } from "@/history";
 import {
   blockoideBundle,
   blockoideBttfAdapter,
@@ -81,7 +81,7 @@ export function mountBlockoide(
   }
 
   const config = parseLevel(opts.puzzle ?? sprint);
-  const seed = opts.seed ?? (config as { rng_seed?: number }).rng_seed ?? 1;
+  const seed = opts.seed ?? levelSeed(config);
   const history = createHistory({
     bundle: blockoideBundle,
     config,

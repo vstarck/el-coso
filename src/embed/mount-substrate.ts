@@ -12,16 +12,19 @@
  * "Everything setupable" (the export pipeline's contract): `config` can pin
  * the puzzle, lens, seed, speed, autoplay, and any lens/config tunable. Config-
  * target tunables are merged into the parsed level *before* the history is
- * built; lens-target tunables go through `setTunable` after mount; speed via
+ * built — CHECKED first (S263: `planMountTunables`, the same check as every
+ * other config write; an undeclared key is refused); lens-target tunables go
+ * through `setTunable` after mount; speed via
  * the lens's `setSpeed`. All reuse surfaces that already exist — no new lens
  * API.
  */
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { createHistory, historyEditConfig, historyReset, type HistoryAdapter } from "@/history";
+import { createHistory, historyEditConfig, historyReset, levelSeed, type HistoryAdapter } from "@/history";
 import { mountHost, type TouchAction } from "@/lib/lens-host/mount-host";
 import { makeLensHost } from "@/lib/lens-host/host";
+import { planMountTunables, type ConfigCheck } from "@/lenses/config-write";
 import type {
   EmbedCommandSpec,
   Lens,
@@ -47,6 +50,8 @@ export type SubstrateModule = {
   bundle: any;
   adapter: HistoryAdapter<any, any, any> | ((config: any) => HistoryAdapter<any, any, any>);
   parseLevel: (json: any) => any;
+  /** The level's whole-config invariants (S263; the app registry's `SubstrateModule.checkConfig`). */
+  checkConfig?: ConfigCheck;
 };
 
 export type EmbedConfig = {
@@ -54,15 +59,17 @@ export type EmbedConfig = {
   puzzle?: string;
   /** Lens id (defaults to the substrate's `defaultLensId`). */
   lens?: string;
-  /** RNG seed override (defaults to the level's `rng_seed`, then 1). */
+  /** RNG seed override (defaults to the level's own seed — `levelSeed`). */
   seed?: number;
   /** Speed preset id (one of the lens's `speeds`). */
   speed?: string;
   /** Start running on mount. Defaults to true. */
   autoplay?: boolean;
   /** Any tunable, keyed by dotted path (e.g. "show_tick_counter" or
-   *  "physics.gravity"). Config-target tunables merge into the level;
-   *  lens-target tunables are applied via the mounted lens. */
+   *  "physics.gravity"). Config-target tunables merge into the level, checked
+   *  as one batch (declaration + the substrate's `checkConfig`); lens-target
+   *  tunables are applied via the mounted lens. A key no tunable of the lens
+   *  declares THROWS (S263) — it used to reach a lens setter that may ignore it. */
   tunables?: Record<string, TunableValue>;
   /** Start with looping on, if the substrate honours `config.loop` (a
    *  presentational substrate that restarts itself at the end of its run).
@@ -129,18 +136,6 @@ function findPuzzleJson(substrate: SubstrateModule, id: string | undefined): unk
   return hit;
 }
 
-// Deep-set a dotted path on a plain object (config-target tunables). Mutates
-// `obj`; only walks/creates plain-object segments.
-function deepSet(obj: Record<string, any>, path: string[], value: unknown): void {
-  let cur = obj;
-  for (let i = 0; i < path.length - 1; i++) {
-    const key = path[i]!;
-    if (typeof cur[key] !== "object" || cur[key] === null) cur[key] = {};
-    cur = cur[key];
-  }
-  cur[path[path.length - 1]!] = value;
-}
-
 export function mountSubstrate(
   target: HTMLElement | string,
   substrate: SubstrateModule,
@@ -157,25 +152,21 @@ export function mountSubstrate(
   // Parse the chosen puzzle into a level config, then fold in config-target
   // tunables (the lens declares which paths target "config") BEFORE history
   // construction — those values are baked into the run, not toggled live.
-  const level = substrate.parseLevel(findPuzzleJson(substrate, config.puzzle));
-  const lensTunables: Array<{ path: string[]; value: TunableValue }> = [];
-  if (config.tunables) {
-    for (const [dotted, value] of Object.entries(config.tunables)) {
-      const path = dotted.split(".");
-      const decl = lens.tunables.find((t) => t.path.join(".") === dotted);
-      if (decl?.target === "config") {
-        deepSet(level as Record<string, any>, path, value);
-      } else {
-        lensTunables.push({ path, value });
-      }
-    }
-  }
+  // ★ CHECKED (S263, review I2/S7/W3): this used to deep-set each value into the level with no type, range or
+  // integer check, CREATING any missing object — rgba at mobility 5 → 54,484 non-finite cells by tick 200. The
+  // config ones now take the same check as every other config write (declaration + the substrate's checkConfig, as
+  // one batch); an undeclared key is refused rather than handed to a lens setter that may ignore it.
+  const planned = planMountTunables(
+    lensId, lens.tunables, substrate.parseLevel(findPuzzleJson(substrate, config.puzzle)),
+    config.tunables ?? {}, substrate.checkConfig,
+  );
+  const level = planned.level;
+  const lensTunables = planned.lens;
 
   if (config.precomputed !== undefined) {
     (level as Record<string, unknown>).precomputed = config.precomputed;
   }
-  const seed =
-    config.seed ?? (level as { rng_seed?: number }).rng_seed ?? 1;
+  const seed = config.seed ?? levelSeed(level);
   const adapter =
     typeof substrate.adapter === "function" ? substrate.adapter(level) : substrate.adapter;
   const history = createHistory({

@@ -31,9 +31,9 @@ npm run export -- tts \
 |---|---|
 | `--puzzle=<id>` | which puzzle to load |
 | `--lens=<id>`   | which lens to mount |
-| `--seed=<n>`    | the RNG seed |
+| `--seed=<n>`    | the RNG seed (default: the level's own — `rng_seed`, else `seed`, else 1) |
 | `--speed=<id>`  | a speed preset |
-| `--set k=v`     | any lens or config tunable (repeatable) |
+| `--set k=v`     | any lens or config tunable the lens declares (repeatable); an undeclared key, or a config value its declaration or the substrate's `checkConfig` refuses, fails the mount with the reason |
 | `--no-autoplay` | mount paused instead of self-running |
 | `--loop`        | restart at the end of the run (substrates that honour it) |
 | `--touch-action=<v>` | touch policy: `none` (full capture) / `pan-y` (let vertical scroll through) |

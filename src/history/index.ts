@@ -16,6 +16,7 @@ export {
   historyLineageCommits,
   historyEditConfig,
 } from "./history";
+export { levelSeed } from "./level-seed";
 export { tapeShare, tapeRestore, tapeSetPath, tapeDiff, tapeApply, type TapeOp, type TapePatch } from "./config-tape";
 export type {
   Branch,
