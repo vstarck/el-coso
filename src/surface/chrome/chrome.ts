@@ -22,7 +22,12 @@ export type Chrome = {
   root: HTMLDivElement;
   stage: HTMLDivElement;
   thumbs: Record<string, HTMLCanvasElement>;
+  /** the footer's DECLARED height — part of the natural size, unchanged by `showFooter` */
   footerHeight: number;
+  /** show or hide the footer strip (S263, rgba's `footer on|off`): hidden, the stage takes the whole root and a lens
+   *  should neither paint the footer nor reserve its rows (`footerShown`). Throws on a dashboard with no footer. */
+  showFooter: (on: boolean) => void;
+  footerShown: () => boolean;
   setCanvas: (c: HTMLCanvasElement) => void;
   paintFooter: (ctx: CanvasRenderingContext2D, y0: number, k: number, cssWidth: number) => void;
   footerText: () => string;
@@ -50,8 +55,14 @@ const CSS = `
    exactly swarm-swart-grid's old rgba(224,164,88,.28). */
 /* every CONTROL dimension is × var(--s), the UI scale (the lens's ui_scale tunable); the root and the footer are not
    — the footer's height is part of the embed's natural size */
+/* S263, the owner: UI text is not selectable. Measured without this rule (rgba's post, real pointer and keys):
+   select-all took 267 chars of chrome text (every label, plus the footer's screen-reader text), and a double-click on a
+   flyout's slider name selected a word. The labels themselves take no pointer events, so a click never reached them.
+   On the ROOT, so every label, flyout and readout inherits it; a lens's console mounts BESIDE the root and keeps its
+   text copyable (triple-click selects a line, measured with the rule on). Screen readers still read the footer text. */
 .ec-root{--s:1;--v:.6;--ec-accent:#e0a458;--ec-accent-rgb:224,164,88;position:relative;width:100%;height:100%;display:flex;flex-direction:column;background:#050505;overflow:hidden;
-  font:500 12px/1.3 system-ui,-apple-system,sans-serif;color:#e7e2d8;-webkit-tap-highlight-color:transparent}
+  font:500 12px/1.3 system-ui,-apple-system,sans-serif;color:#e7e2d8;-webkit-tap-highlight-color:transparent;
+  user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
 .ec-root>canvas{position:absolute;inset:0;width:100%;height:100%;display:block;z-index:0}
 /* the stage lies OVER the canvas: pointer events pass through it to the canvas, except on its controls */
 .ec-stage{position:relative;flex:1 1 auto;min-height:0;overflow:hidden;z-index:1;pointer-events:none}
@@ -347,6 +358,11 @@ export function mountChrome(container: HTMLElement, dashboard: Dashboard, events
       drawFooter(ctx, lay, y0, k, dash.footer.qr.rows);
     },
     footerText: () => srText,
+    showFooter(on) {
+      if (!dash.footer) throw new Error("chrome: this dashboard declares no footer");
+      foot.hidden = !on;
+    },
+    footerShown: () => dash.footer !== undefined && !foot.hidden,
     has: (id) => entries.has(id),
     set(id, patch) {
       const e = entry(id);

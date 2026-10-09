@@ -122,7 +122,7 @@ export function SubstrateHost() {
     // state during the brief window before React tears this mount down).
     const lens = session.active_lens;
     const history = session.history;
-    const renderSize = renderSizeFor(session.active_substrate_id);
+    const renderSize = renderSizeFor(session.active_substrate_id, lens);
     // Recompute the inset for the (possibly newly-switched) substrate before
     // the lens subscribes below, so a render-sized substrate's HUD gets the
     // uniform safe-area rather than a stale panel-occlusion inset.
@@ -241,7 +241,7 @@ export function SubstrateHost() {
   // Subscribe to sessionVersion (already above) so the chrome rerenders
   // when the lens changes and we pick up the new layout features.
   const lens = session.active_lens;
-  const renderSize = renderSizeFor(session.active_substrate_id);
+  const renderSize = renderSizeFor(session.active_substrate_id, lens);
   const bounded = hasFeature(lens, "BOUNDED");
   const wantsPerspective = chromeAppliesPerspective(lens);
 

@@ -162,10 +162,14 @@ export function chromePanelsFor(
   return SUBSTRATE_BY_ID[substrate_id]?.chrome;
 }
 
-// The substrate's fixed render envelope, if it declares one. The host reads
-// this to size + center the lens-tree box; absent ⇒ full-bleed.
-export function renderSizeFor(substrate_id: string): RenderSize | undefined {
-  return SUBSTRATE_BY_ID[substrate_id]?.renderSize;
+// The fixed render envelope, if any: the lens's own (S263) wins over the
+// substrate's. The host reads this to size + center the lens-tree box;
+// absent ⇒ full-bleed.
+export function renderSizeFor(
+  substrate_id: string,
+  lens: { renderSize?: RenderSize } | undefined = session.active_lens,
+): RenderSize | undefined {
+  return lens?.renderSize ?? SUBSTRATE_BY_ID[substrate_id]?.renderSize;
 }
 
 // Convenience for the puzzle picker — keeps the current substrate, swaps

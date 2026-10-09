@@ -191,7 +191,7 @@ export function mountSubstrate(
   });
   const mounted = mountHost(el, lens, history, {
     host,
-    renderSize: substrate.meta.renderSize,
+    renderSize: lens.renderSize ?? substrate.meta.renderSize, // the lens's own envelope wins (S263)
     profileLabel: `${substrate.meta.id}/${lensId}`,
     ...(config.touchAction ? { touchAction: config.touchAction } : {}),
   });

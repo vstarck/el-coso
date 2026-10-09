@@ -460,6 +460,11 @@ export type Lens<State extends TickedState, Config, Input, CommitPayload> = {
   // Chrome theme — accent color etc. Chrome reads via `getLensTheme()`
   // so the default falls through cleanly when omitted. See `LensTheme`.
   theme?: LensTheme;
+  // The lens's OWN fixed render envelope (S263), when it differs from its substrate's `meta.renderSize` — a lens that
+  // draws more than the substrate's picture (rgba's post: the poster AND a credits footer below it) needs a box the
+  // substrate's other lenses must not get. Wins over `meta.renderSize` in every host (the studio's `renderSizeFor`,
+  // the embed's `mountSubstrate`). Omit ⇒ the substrate's.
+  renderSize?: RenderSize;
   // Substrate-specific named commands this lens accepts, for embed-SDK discovery
   // (spec/25). Declaration only; dispatch is `MountedLens.command`. Omit ⇒ no
   // named commands (the lens still gets the universal verbs + tunable channel).
