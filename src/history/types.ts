@@ -18,6 +18,7 @@
 
 import type { TapePatch } from "./config-tape";
 import type {
+  EngineResources,
   ResolutionRecord,
   RNGState,
   Substrate,
@@ -188,6 +189,9 @@ export type History<
   CommitPayload,
 > = {
   bundle: SubstrateBundle<State, Config, Input>;
+  // What the host injected (engine/types.ts, *host resources*), kept so every re-alloc — a reset, a replay from
+  // nothing — hands the bundle the same device it was built on.
+  resources: EngineResources;
   // The LIVE config. Its identity never changes. A live edit goes through `historyEditConfig`, which records it on
   // the tape; replay restores it in place (spec/31). A write straight into it still takes effect at the head but is
   // NOT recorded (the guard, `config_verify`, makes that loud).

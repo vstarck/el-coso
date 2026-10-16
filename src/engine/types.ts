@@ -41,6 +41,33 @@ export type ResolutionRecord = {
   note?: unknown;
 };
 
+// --- host resources ---------------------------------------------------------
+//
+// What the host hands a bundle at alloc time that the engine cannot make itself. The motivating case is a GPU device:
+// acquiring one is asynchronous and a tick is not, so the HOST acquires it (at boot, in a test's setup) and every
+// `alloc` receives it here. A step that only ENQUEUES GPU work stays synchronous; what can never be synchronous is
+// reading the GPU's results back, so a bundle whose state lives on a device must not branch on that state inside a
+// tick. The engine tier carries no platform types: `gpu` is opaque here and the bundle casts it.
+//
+// `unavailable` carries the reason a resource is absent ("no WebGPU adapter", "device request timed out"), so a bundle
+// that requires it is refused with the cause rather than with a bare "missing".
+export type ResourceName = "gpu";
+export type EngineResources = {
+  gpu?: unknown;
+  unavailable?: Partial<Record<ResourceName, string>>;
+};
+
+// A bundle whose State the history layer's generic copy cannot snapshot — a GPU buffer handle, any object whose bytes
+// do not live in the JS heap — supplies these. The generic copy REFUSES such a field rather than copying it to `{}`.
+//   capture — a new State-shaped snapshot of `state` (for a GPU state: fresh buffers and an enqueued copy).
+//   restore — make `target` equal `snap`, in place (an enqueued copy). `target` keeps its own buffers.
+//   release — the history discarded `snap` (truncate, reset): free what it owns. Called once per captured snapshot.
+export type SnapshotHooks<State> = {
+  capture: (state: State) => State;
+  restore: (target: State, snap: State) => void;
+  release: (snap: State) => void;
+};
+
 // A substrate package implements this lifecycle. The engine consumes it.
 //
 //   State   — substrate-specific state struct. Shape is up to the
@@ -66,8 +93,18 @@ export type ResolutionRecord = {
 //
 // At least one of tick / tickResolve must be present (checked at the
 // driver); when both are, drivers use tickResolve.
+//
+// Optional, for a bundle whose State holds what the JS heap does not (see *host resources* above):
+//   requires — the resources `alloc` cannot run without; allocSubstrate refuses, naming the cause, when one is absent.
+//   snapshot — keyframe hooks replacing the history's generic copy.
+//   free     — a State the engine or history dropped (a reset, a re-alloc): free what it owns. Called on both halves.
 export type SubstrateBundle<State, Config, Inputs> = {
-  alloc: (config: Config) => { read: State; write: State };
+  // `resources` is always passed by allocSubstrate (and so by the history layer); optional so a test calling
+  // `bundle.alloc(config)` directly keeps compiling — such a call skips the `requires` check, as it skips initState.
+  alloc: (config: Config, resources?: EngineResources) => { read: State; write: State };
+  requires?: readonly ResourceName[];
+  snapshot?: SnapshotHooks<State>;
+  free?: (state: State) => void;
   initState: (state: State, config: Config) => void;
   tick?: (
     read: State,

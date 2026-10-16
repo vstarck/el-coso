@@ -1,4 +1,7 @@
 export type {
+  EngineResources,
+  ResourceName,
+  SnapshotHooks,
   Resolve,
   ResolveOpts,
   ResolutionKind,

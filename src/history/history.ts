@@ -4,7 +4,7 @@ import {
   tickAny as engineTickAny,
   tickReplay as engineTickReplay,
 } from "@/engine/substrate";
-import type { ResolutionRecord, SubstrateBundle } from "@/engine/types";
+import type { EngineResources, ResolutionRecord, SubstrateBundle } from "@/engine/types";
 import { tapeApply, tapeDiff, tapeRestore, tapeSetPath, tapeShare, type TapeOp } from "./config-tape";
 import type {
   Branch,
@@ -43,13 +43,17 @@ export function createHistory<
   entropy_draw?: () => number;
   // spec/31 §5: throw on a config write that bypassed historyEditConfig. A whole-config walk per tick: for tests.
   config_verify?: boolean;
+  // What the host injected for bundles that `require` it (engine/types.ts, *host resources*). Kept on the history.
+  resources?: EngineResources;
 }): History<State, Config, Input, CommitPayload> {
-  const substrate = engineAlloc(args.bundle, args.config);
+  const resources = args.resources ?? {};
+  const substrate = engineAlloc(args.bundle, args.config, resources);
   const root_branch_id = args.root_branch_id ?? DEFAULT_ROOT_BRANCH_ID;
   const keyframe_period = args.keyframe_period ?? DEFAULT_KEYFRAME_PERIOD;
 
   const h: History<State, Config, Input, CommitPayload> = {
     bundle: args.bundle,
+    resources,
     config: args.config,
     adapter: args.adapter,
     substrate,
@@ -84,7 +88,10 @@ export function historyReset<
   Input,
   CommitPayload,
 >(h: History<State, Config, Input, CommitPayload>): void {
-  const fresh = engineAlloc(h.bundle, h.config);
+  // Everything the reset drops is released first: every keyframe on every branch, and both State halves.
+  for (const b of Object.values(h.branches)) releaseKeyframes(h, b.keyframes);
+  const fresh = engineAlloc(h.bundle, h.config, h.resources);
+  freeSubstrate(h);
   h.substrate.read = fresh.read;
   h.substrate.write = fresh.write;
   h.rng = { seed: h.rng_seed_initial };
@@ -228,7 +235,8 @@ export function historyStateAt<
     const rootConfig = h.branches[h.root_branch_id]!.keyframes[0]?.config;
     if (rootConfig === undefined) throw new Error("history: no root keyframe config to replay from (spec/31)");
     restoreConfig(h, rootConfig);
-    const fresh = engineAlloc(h.bundle, h.config);
+    const fresh = engineAlloc(h.bundle, h.config, h.resources);
+    freeSubstrate(h);
     h.substrate.read = fresh.read;
     h.substrate.write = fresh.write;
     h.rng = { seed: h.rng_seed_initial };
@@ -237,8 +245,8 @@ export function historyStateAt<
     const k = best.keyframe;
     if (k.config === undefined) throw new Error(`history: keyframe at tick ${k.tick} carries no config (spec/31)`);
     restoreConfig(h, k.config);
-    restoreSnapshot(h.substrate.read, k.snapshot);
-    restoreSnapshot(h.substrate.write, k.snapshot);
+    restoreKeyframe(h, h.substrate.read, k.snapshot);
+    restoreKeyframe(h, h.substrate.write, k.snapshot);
     h.rng = { seed: k.rng.seed };
     replayForward(h, lineage, best.segment_index, k.tick, tick);
   }
@@ -425,13 +433,17 @@ export function historyTruncate<
   // `historyDescendantsForkedPast` first and declines; there is no policy
   // knob — the one truncate does the one thing rewind/checkout needs.
   const descendants = collectDescendantsForkedPast(h.branches, branch_id, at_tick);
-  for (const id of descendants) delete h.branches[id];
+  for (const id of descendants) {
+    releaseKeyframes(h, h.branches[id]!.keyframes);
+    delete h.branches[id];
+  }
   if (!h.branches[h.active]) h.active = h.root_branch_id;
 
   // Slice the target branch.
   const keep_inputs = at_tick - branch.fork_tick;
   branch.inputs = branch.inputs.slice(0, keep_inputs);
   branch.commits = branch.commits.filter((c) => c.tick <= at_tick);
+  releaseKeyframes(h, branch.keyframes.filter((k) => k.tick > at_tick));
   branch.keyframes = branch.keyframes.filter((k) => k.tick <= at_tick);
   branch.head_tick = at_tick;
 
@@ -722,10 +734,31 @@ function pushKeyframe<S extends TickedState, C, I, P>(
 ): void {
   branch.keyframes.push({
     tick: h.substrate.read.tick,
-    snapshot: captureSnapshot(h.substrate.read),
+    snapshot: h.bundle.snapshot ? h.bundle.snapshot.capture(h.substrate.read) : captureSnapshot(h.substrate.read),
     rng: { seed: h.rng.seed },
     config: h.config_tape, // by reference: tape snapshots are immutable (spec/31)
   });
+}
+
+// A keyframe goes back into a live State through the bundle's hooks when it has them (engine/types.ts,
+// SnapshotHooks), else the generic copy.
+function restoreKeyframe<S extends TickedState, C, I, P>(h: History<S, C, I, P>, target: S, snap: S): void {
+  if (h.bundle.snapshot) h.bundle.snapshot.restore(target, snap);
+  else restoreSnapshot(target, snap);
+}
+
+// Keyframes the history is about to drop. A generic snapshot is heap data and needs nothing; a hooked one may own a
+// device's memory, which nothing else would ever free.
+function releaseKeyframes<S extends TickedState, C, I, P>(h: History<S, C, I, P>, dropped: readonly { snapshot: S }[]): void {
+  if (!h.bundle.snapshot) return;
+  for (const k of dropped) h.bundle.snapshot.release(k.snapshot);
+}
+
+// Both halves of the live substrate, about to be replaced by a fresh alloc.
+function freeSubstrate<S extends TickedState, C, I, P>(h: History<S, C, I, P>): void {
+  if (!h.bundle.free) return;
+  h.bundle.free(h.substrate.read);
+  h.bundle.free(h.substrate.write);
 }
 
 // --- config tape helpers (spec/31) ----------------------------------------
@@ -802,7 +835,7 @@ function captureSnapshot<State extends TickedState>(state: State): State {
   const snap: Record<string, unknown> = {};
   const src = state as unknown as Record<string, unknown>;
   for (const key of Object.keys(src)) {
-    snap[key] = cloneField(src[key]);
+    snap[key] = cloneField(src[key], key);
   }
   return snap as unknown as State;
 }
@@ -831,7 +864,7 @@ function restoreSnapshot<State extends TickedState>(
       // Plain arrays / plain objects: replace with a fresh clone so a
       // subsequent tick can't mutate the keyframe through the substrate's
       // read buffer.
-      t[key] = cloneField(sv);
+      t[key] = cloneField(sv, key);
     }
   }
 }
@@ -842,18 +875,28 @@ function restoreSnapshot<State extends TickedState>(
 // `number[][]` field on an element of a state array — as a plain object
 // ({"0": …}), silently corrupting the keyframe; a typed array nested below
 // the top level had the same hole.
-function cloneField(v: unknown): unknown {
+//
+// ★ It REFUSES what it cannot copy. A class instance — a GPU buffer handle, a Map, a DataView — has no own enumerable
+// keys, so the object branch below used to clone it to `{}` with no error, and restoring that keyframe overwrote the
+// live field with `{}`. Only plain objects (prototype Object.prototype or null) are walked; anything else throws,
+// naming the field, and the bundle supplies SnapshotHooks instead.
+function cloneField(v: unknown, path: string): unknown {
   if (isTypedArray(v)) {
     // Copy via the view's own constructor — preserves the exact subtype
     // (Float32Array → Float32Array, Int32Array → Int32Array, etc.).
     const ctor = (v as ArrayBufferView).constructor as new (src: ArrayBufferView) => ArrayBufferView;
     return new ctor(v);
   }
-  if (Array.isArray(v)) return v.map((x) => cloneField(x));
+  if (Array.isArray(v)) return v.map((x, i) => cloneField(x, `${path}[${i}]`));
   if (v !== null && typeof v === "object") {
+    const proto = Object.getPrototypeOf(v);
+    if (proto !== Object.prototype && proto !== null) {
+      const kind = (proto?.constructor as { name?: string } | undefined)?.name || "non-plain object";
+      throw new Error(`history: state field "${path}" holds a ${kind}, which the generic keyframe copy cannot snapshot — give the bundle snapshot hooks (engine/types.ts, SnapshotHooks)`);
+    }
     const o = v as Record<string, unknown>;
     const out: Record<string, unknown> = {};
-    for (const key of Object.keys(o)) out[key] = cloneField(o[key]);
+    for (const key of Object.keys(o)) out[key] = cloneField(o[key], `${path}.${key}`);
     return out;
   }
   return v;

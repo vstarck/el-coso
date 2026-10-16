@@ -1,4 +1,4 @@
-import type { RNGState, Substrate, SubstrateBundle } from "./types";
+import type { EngineResources, RNGState, Substrate, SubstrateBundle } from "./types";
 import { allocSubstrate, swap, tickAny } from "./substrate";
 
 // Drive a substrate headlessly: alloc, then apply one input per tick,
@@ -27,8 +27,9 @@ export function runHeadless<State, Config, Inputs>(
   config: Config,
   seed: number,
   inputs: Inputs[],
+  resources: EngineResources = {},
 ): State {
-  const substrate: Substrate<State> = allocSubstrate(bundle, config);
+  const substrate: Substrate<State> = allocSubstrate(bundle, config, resources);
   let rng: RNGState = { seed };
   for (const input of inputs) {
     // Transcript discarded — a headless probe that wants the records calls

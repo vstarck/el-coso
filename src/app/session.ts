@@ -16,6 +16,7 @@
 
 import { createHistory, levelSeed, type History } from "../history";
 import { clearThumbnailCache } from "./lib/thumbnail";
+import { engineResources } from "./resources";
 import {
   findPuzzle,
   resolveInitialSelection,
@@ -66,6 +67,7 @@ function buildHistoryFor(substrate: SubstrateEntry, puzzle: PuzzleEntry) {
     rng_seed: levelSeed(config),
     adapter,
     keyframe_period: substrate.keyframePeriod,
+    resources: engineResources(),
   });
 }
 

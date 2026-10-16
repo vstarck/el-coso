@@ -5,6 +5,7 @@ import {
   makeVerifyResolve,
 } from "./resolver";
 import type {
+  EngineResources,
   ResolutionRecord,
   RNGState,
   Substrate,
@@ -16,11 +17,22 @@ import type {
 // remote-seeded snapshots, anything that satisfies `{ read, write }` is
 // fair game. The engine just calls `initState` on the read side; the
 // first tick is responsible for filling write.
+//
+// `resources` are what the host injected (types.ts, *host resources*). A bundle that `requires` one the host did not
+// provide is refused here, with the host's stated reason, before `alloc` runs: the alternative is an alloc that
+// half-works or a tick that throws later for a cause nobody named.
 export function allocSubstrate<State, Config, Inputs>(
   bundle: SubstrateBundle<State, Config, Inputs>,
   config: Config,
+  resources: EngineResources = {},
 ): Substrate<State> {
-  const { read, write } = bundle.alloc(config);
+  for (const name of bundle.requires ?? []) {
+    if (resources[name] === undefined) {
+      const why = resources.unavailable?.[name];
+      throw new Error(`allocSubstrate: this bundle requires the "${name}" resource and the host provided none${why ? ` (${why})` : " (no reason given)"}`);
+    }
+  }
+  const { read, write } = bundle.alloc(config, resources);
   bundle.initState(read, config);
   return { read, write };
 }

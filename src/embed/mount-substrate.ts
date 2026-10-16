@@ -175,6 +175,8 @@ export function mountSubstrate(
     rng_seed: seed,
     adapter,
     keyframe_period: substrate.meta.keyframePeriod,
+    // The embed acquires no host resources (engine/types.ts): a bundle that requires one is refused, saying why.
+    resources: { unavailable: { gpu: "the embed does not acquire a GPU device" } },
   });
 
   const host = makeLensHost({
