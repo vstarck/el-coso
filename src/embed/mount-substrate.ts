@@ -42,6 +42,7 @@ export type SubstrateModule = {
     name: string;
     defaultPuzzle: string;
     keyframePeriod: number;
+    keyframeBudget?: number;
     renderSize?: RenderSize;
   };
   puzzles: ReadonlyArray<{ id?: string; description?: string } & object>;
@@ -175,6 +176,7 @@ export function mountSubstrate(
     rng_seed: seed,
     adapter,
     keyframe_period: substrate.meta.keyframePeriod,
+    ...(substrate.meta.keyframeBudget !== undefined ? { keyframe_budget: substrate.meta.keyframeBudget } : {}),
     // The embed acquires no host resources (engine/types.ts): a bundle that requires one is refused, saying why.
     resources: { unavailable: { gpu: "the embed does not acquire a GPU device" } },
   });

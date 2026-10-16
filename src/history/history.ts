@@ -36,6 +36,8 @@ export function createHistory<
   rng_seed: number;
   adapter: HistoryAdapter<State, Input, CommitPayload>;
   keyframe_period?: number;
+  // At most this many keyframes per branch (spec/14 Invariant 9). Absent = Infinity (the pre-budget behaviour).
+  keyframe_budget?: number;
   root_branch_id?: string;
   // Resolver backing (spec/27). Absent = "rng"; "entropy" additionally
   // requires entropy_draw and a tickResolve bundle (checked at historyTick).
@@ -50,6 +52,10 @@ export function createHistory<
   const substrate = engineAlloc(args.bundle, args.config, resources);
   const root_branch_id = args.root_branch_id ?? DEFAULT_ROOT_BRANCH_ID;
   const keyframe_period = args.keyframe_period ?? DEFAULT_KEYFRAME_PERIOD;
+  const keyframe_budget = args.keyframe_budget ?? Infinity;
+  if (!(keyframe_budget === Infinity || (Number.isInteger(keyframe_budget) && keyframe_budget >= 2))) {
+    throw new Error(`createHistory: keyframe_budget must be an integer >= 2 or Infinity, got ${keyframe_budget}`);
+  }
 
   const h: History<State, Config, Input, CommitPayload> = {
     bundle: args.bundle,
@@ -68,6 +74,7 @@ export function createHistory<
     root_branch_id,
     next_commit_id: 0,
     keyframe_period,
+    keyframe_budget,
   };
   if (args.resolver_mode !== undefined) h.resolver_mode = args.resolver_mode;
   if (args.entropy_draw !== undefined) h.entropy_draw = args.entropy_draw;
@@ -200,6 +207,7 @@ export function historyTick<
   // Periodic keyframe on the active branch.
   if (shouldKeyframeAt(h.keyframe_period, after.tick)) {
     pushKeyframe(h, active);
+    thinKeyframes(h, active);
   }
 }
 
@@ -738,6 +746,30 @@ function pushKeyframe<S extends TickedState, C, I, P>(
     rng: { seed: h.rng.seed },
     config: h.config_tape, // by reference: tape snapshots are immutable (spec/31)
   });
+}
+
+// The keyframe budget (spec/14 Invariant 9). Keyframes are a cache (Invariant 1), so dropping one changes the cost of
+// reaching a tick and nothing else. While a branch holds more than the budget b, every other keyframe in its OLDER
+// part — all but the newest ceil(b/2) — is dropped, starting from the second: the OLDEST keyframe of every branch is
+// never dropped (on the root branch that is tick 0), and neither are the newest ceil(b/2). Recent history stays dense,
+// spacing grows going back, memory is bounded. Progress: with length > b >= 2 the older part holds
+// length − ceil(b/2) >= floor(b/2) + 1 >= 2 keyframes, so each pass drops at least one. (An earlier draft also
+// protected the root explicitly; a canary deleting that check changed nothing, because keeping the first of the older
+// part already does it — the check was removed rather than kept as a guard nothing can trigger.)
+// Every dropped keyframe is released through the bundle's hooks. Keyframes are in tick order: pushKeyframe only ever
+// appends at the active head (historyTick re-anchors there first) and truncate filters in place.
+function thinKeyframes<S extends TickedState, C, I, P>(h: History<S, C, I, P>, branch: Branch<S, I, P>): void {
+  const budget = h.keyframe_budget;
+  if (!Number.isFinite(budget)) return;
+  const keepNewest = Math.ceil(budget / 2);
+  while (branch.keyframes.length > budget) {
+    const ks = branch.keyframes;
+    const olderEnd = ks.length - keepNewest;
+    const dropped = new Set<number>();
+    for (let i = 1; i < olderEnd; i += 2) dropped.add(i);
+    releaseKeyframes(h, ks.filter((_, i) => dropped.has(i)));
+    branch.keyframes = ks.filter((_, i) => !dropped.has(i));
+  }
 }
 
 // A keyframe goes back into a live State through the bundle's hooks when it has them (engine/types.ts,

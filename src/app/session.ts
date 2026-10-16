@@ -67,6 +67,7 @@ function buildHistoryFor(substrate: SubstrateEntry, puzzle: PuzzleEntry) {
     rng_seed: levelSeed(config),
     adapter,
     keyframe_period: substrate.keyframePeriod,
+    ...(substrate.keyframeBudget !== undefined ? { keyframe_budget: substrate.keyframeBudget } : {}),
     resources: engineResources(),
   });
 }

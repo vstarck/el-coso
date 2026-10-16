@@ -224,6 +224,8 @@ export type History<
   root_branch_id: BranchId;
   next_commit_id: number;
   keyframe_period: number;
+  // At most this many keyframes per branch; Infinity = no budget (spec/14 Invariant 9).
+  keyframe_budget: number;
   // Resolver backing (spec/27 Stage B). Absent = "rng" (default;
   // byte-identical to pre-spec behavior, no transcript recorded).
   resolver_mode?: ResolverMode;

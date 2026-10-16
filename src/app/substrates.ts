@@ -78,6 +78,9 @@ export type SubstrateEntry = {
   // shorter period to keep keyframes cheap; sparse substrates can stretch
   // it. A moderate SoA keeps replay cost predictable around 100.
   keyframePeriod: number;
+  // At most this many keyframes per branch (spec/14 Invariant 9) — for a substrate whose keyframe is large (a GPU
+  // state). Omitted ⇒ no budget.
+  keyframeBudget?: number;
 
   // ── Gallery card metadata (all optional) ──────────────────────────────
   // One-line blurb under the title in the gallery modal.
@@ -118,6 +121,7 @@ export type SubstrateModule = {
     name: string;
     defaultPuzzle: string;
     keyframePeriod: number;
+    keyframeBudget?: number;
     chrome?: ChromePanelsConfig;
     renderSize?: RenderSize;
     description?: string;
@@ -151,6 +155,7 @@ function buildEntry(mod: SubstrateModule): SubstrateEntry {
     parseLevel: mod.parseLevel,
     ...(mod.checkConfig ? { checkConfig: mod.checkConfig } : {}),
     keyframePeriod: m.keyframePeriod,
+    ...(m.keyframeBudget !== undefined ? { keyframeBudget: m.keyframeBudget } : {}),
     // Conditional spread, not `chrome: m.chrome` — exactOptionalPropertyTypes
     // forbids assigning `undefined` to the optional fields.
     ...(m.chrome ? { chrome: m.chrome } : {}),
