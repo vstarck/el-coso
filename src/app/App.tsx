@@ -11,6 +11,7 @@ import { HelpPanel } from "./components/overlays/HelpPanel";
 import { KitchenSink } from "./components/overlays/KitchenSink";
 import { SettingsPanel } from "./components/overlays/SettingsPanel";
 import { OutcomeDialog } from "./components/overlays/OutcomeDialog";
+import { NoticeStack } from "./components/overlays/NoticeStack";
 import { TimelinePanel } from "./components/timeline/TimelinePanel";
 import { applyLensTheme } from "@/lib/accentTheme";
 import { useKeyboard } from "./lib/useKeyboard";
@@ -47,6 +48,7 @@ export default function App() {
       <SubstrateHost />
 
       <div className="pointer-events-none absolute inset-0">
+        <NoticeStack />
         {/* ── Toolbar / top stub ─────────────────────────────────────── */}
         {availablePanels.toolbar &&
           (panels.toolbar ? (

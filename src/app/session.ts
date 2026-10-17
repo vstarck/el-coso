@@ -17,6 +17,7 @@
 import { createHistory, levelSeed, type History } from "../history";
 import { clearThumbnailCache } from "./lib/thumbnail";
 import { engineResources } from "./resources";
+import { errorText, firstBuildable, pushNotice } from "./notices";
 import {
   findPuzzle,
   resolveInitialSelection,
@@ -90,8 +91,16 @@ function buildRootFrame(
 // the chrome lens graph and importable headless.
 setDrillRegistry(SUBSTRATES);
 
+// Boot: the URL's selection first, then the roster in order — the first whose history builds. A refusal is a notice,
+// never a dead app (notices.ts). When the boot had to fall back, the URL is rewritten to what actually opened.
 const initial = resolveInitialSelection();
-resetStack(buildRootFrame(initial.substrate, initial.puzzle, initial.lensId));
+const boot = firstBuildable(
+  [initial, ...SUBSTRATES.filter((s) => s.id !== initial.substrate.id).map((s) => ({ substrate: s, puzzle: findPuzzle(s, s.defaultPuzzle)!, lensId: s.defaultLensId }))],
+  (c) => buildRootFrame(c.substrate, c.puzzle, c.lensId),
+);
+for (const r of boot.refused) pushNotice(`${r.candidate.substrate.name} could not open`, errorText(r.error));
+if (boot.refused.length > 0) writeSelectionToUrl(boot.candidate.substrate.id, boot.candidate.puzzle.id, boot.candidate.lensId);
+resetStack(boot.frame);
 
 export const session: SessionShape = {
   // While drilled in, `history` / `active_lens` project the
@@ -140,6 +149,15 @@ export function setSubstrate(substrate_id: string, puzzle_id?: string): boolean 
   ) {
     return false;
   }
+  // Build the new history FIRST: if it cannot be built (a refused bundle, a bad level), nothing below has run and the
+  // session is exactly as it was — the refusal becomes a notice and the switch reports no change.
+  let frame: SceneFrame;
+  try {
+    frame = buildRootFrame(substrate, puzzle, substrate.defaultLensId);
+  } catch (e) {
+    pushNotice(`${substrate.name} could not open`, errorText(e));
+    return false;
+  }
   // Null the mounted lens synchronously before swapping history. Without
   // this, anything that reads (session.mounted_lens, session.history)
   // during the same render — e.g. CompareOverlay / PreviewCard useMemo
@@ -151,7 +169,7 @@ export function setSubstrate(substrate_id: string, puzzle_id?: string): boolean 
   clearThumbnailCache();
   // A substrate / puzzle swap resets the scene stack to a single root frame
   // (any suspended scene is discarded).
-  resetStack(buildRootFrame(substrate, puzzle, substrate.defaultLensId));
+  resetStack(frame);
   writeSelectionToUrl(substrate.id, puzzle.id, substrate.defaultLensId);
   return true;
 }
